@@ -37,3 +37,9 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+[userenv]
+
+[userenv.shared]
+VITE_SUPABASE_URL = "https://dffbqdiapibdzhpjzpsr.supabase.co"
+VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmZmJxZGlhcGliZHpocGp6cHNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA0Nzk0NjMsImV4cCI6MjA4NjA1NTQ2M30.7f6CynpWNG-P2ss1PE_y023vHmKBqnvHr2-icLwnSqg"
