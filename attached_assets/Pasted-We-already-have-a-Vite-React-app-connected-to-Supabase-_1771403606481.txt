@@ -1,0 +1,113 @@
+We already have a Vite + React app connected to Supabase Auth + DB with tables: facilities, patients, ack_docs. The app has pages: Dashboard, Facilities, Patients, Acknowledgments.
+Environment variables are already set: VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY.
+Row Level Security is enabled; inserts must include owner_user_id = auth.uid().
+
+NEW REQUIREMENTS
+
+Add cross-linking navigation between entities:
+
+In Acknowledgments list: make Facility name clickable → open Facility Profile page.
+
+In Acknowledgments list: make Patient name clickable → open Patient Profile page.
+
+In Patients list: add a Primary Facility column (from linking table) and make it clickable → Facility Profile.
+
+In Facilities pages: show linked Patients list; each patient clickable → Patient Profile.
+
+Add a future-proof patient↔facility relationship via a new table patient_facilities:
+
+The table exists in Supabase: patient_facilities(id, owner_user_id, patient_id, facility_id, is_primary, notes, created_at) with RLS.
+
+Implement UI to manage it:
+
+On Patient Profile page: show linked facilities.
+
+Allow “Link Facility” via dropdown of facilities.
+
+Allow “Set as Primary” (checkbox). If set, ensure all other links for that patient have is_primary=false (enforce single primary in UI).
+
+Add a Cases module (minimal Phase-2):
+
+The table exists in Supabase: cases(id, owner_user_id, patient_id, primary_facility_id nullable, case_title, status OPEN/CLOSED, start_date, notes, created_at) with RLS.
+
+Add sidebar menu item: Cases
+
+Add pages:
+
+/cases list + “Add Case”
+
+/cases/:id Case Profile
+
+Case must be linked to a patient (required) and facility optional.
+
+On Patient Profile, show “Cases for this patient” + link to each Case.
+
+On Facility Profile, show “Cases at this facility” (cases where primary_facility_id = this facility).
+
+Fix ack_no generation in Acknowledgment creation:
+
+Currently ack_no is not reliably generated.
+
+Implement deterministic generation: ACK-YYYYMMDD-XXXX where XXXX is random 4 digits.
+
+Ensure uniqueness: if insert fails with unique violation on ack_no (Postgres code 23505), retry up to 5 times.
+
+Always insert owner_user_id = user.id.
+
+Add detail/profile pages + routing:
+
+Use React Router.
+
+Add routes:
+
+/patients/:id Patient Profile
+
+/facilities/:id Facility Profile
+
+/cases/:id Case Profile
+
+Keep existing list pages working.
+
+DATA FETCH REQUIREMENTS
+
+Use Supabase queries (no mock data).
+
+For Patient list: fetch patients and also fetch primary facility via patient_facilities where is_primary=true. (If no primary, show “—”)
+
+For Facility profile: fetch facility details, linked patients (join using patient_facilities), acknowledgments for that facility, and cases for that facility.
+
+For Patient profile: fetch patient details, linked facilities (patient_facilities), acknowledgments for that patient, and cases for that patient.
+
+UX REQUIREMENTS
+
+Clicking a Facility name anywhere should navigate to facility profile.
+
+Clicking a Patient name anywhere should navigate to patient profile.
+
+Add loading and empty states.
+
+Keep existing UI style consistent.
+
+CONSTRAINTS
+
+Do NOT break Supabase Auth.
+
+Do NOT remove RLS assumptions.
+
+Do NOT change existing table names.
+
+Ensure every insert/update includes correct owner_user_id logic.
+
+After implementing, run the app and verify:
+
+Can link patient to facility and set primary.
+
+Patients list shows primary facility with clickable link.
+
+Facility profile shows linked patients, acks, cases.
+
+Patient profile shows linked facilities, acks, cases.
+
+Creating acknowledgment always generates ack_no.
+
+If you need to modify the DB, ask me first; otherwise assume tables already exist.

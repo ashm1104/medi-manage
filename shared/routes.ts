@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { insertFacilitySchema, insertPatientSchema, insertAckDocSchema, facilities, patients, ack_docs } from './schema';
+import { 
+  insertFacilitySchema, insertPatientSchema, insertAckDocSchema, 
+  insertPatientFacilitySchema, insertCaseSchema,
+  facilities, patients, ack_docs, patient_facilities, cases 
+} from './schema';
 
 export const errorSchemas = {
   validation: z.object({
@@ -24,6 +28,20 @@ export const api = {
       path: '/api/facilities' as const,
       responses: {
         200: z.array(z.custom<typeof facilities.$inferSelect>()),
+        401: errorSchemas.unauthorized,
+      },
+    },
+    get: {
+      method: 'GET' as const,
+      path: '/api/facilities/:id' as const,
+      responses: {
+        200: z.object({
+          facility: z.custom<typeof facilities.$inferSelect>(),
+          patients: z.array(z.any()),
+          acknowledgments: z.array(z.custom<typeof ack_docs.$inferSelect>()),
+          cases: z.array(z.custom<typeof cases.$inferSelect>()),
+        }),
+        404: errorSchemas.notFound,
         401: errorSchemas.unauthorized,
       },
     },
@@ -63,7 +81,21 @@ export const api = {
       method: 'GET' as const,
       path: '/api/patients' as const,
       responses: {
-        200: z.array(z.custom<typeof patients.$inferSelect>()),
+        200: z.array(z.any()), // Extended with primary facility
+        401: errorSchemas.unauthorized,
+      },
+    },
+    get: {
+      method: 'GET' as const,
+      path: '/api/patients/:id' as const,
+      responses: {
+        200: z.object({
+          patient: z.custom<typeof patients.$inferSelect>(),
+          facilities: z.array(z.any()),
+          acknowledgments: z.array(z.custom<typeof ack_docs.$inferSelect>()),
+          cases: z.array(z.custom<typeof cases.$inferSelect>()),
+        }),
+        404: errorSchemas.notFound,
         401: errorSchemas.unauthorized,
       },
     },
@@ -97,13 +129,52 @@ export const api = {
         401: errorSchemas.unauthorized,
       },
     },
+    linkFacility: {
+      method: 'POST' as const,
+      path: '/api/patients/:id/facilities' as const,
+      input: insertPatientFacilitySchema.omit({ patient_id: true }),
+      responses: {
+        201: z.custom<typeof patient_facilities.$inferSelect>(),
+        400: errorSchemas.validation,
+        401: errorSchemas.unauthorized,
+      },
+    },
+  },
+  cases: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/cases' as const,
+      responses: {
+        200: z.array(z.any()),
+        401: errorSchemas.unauthorized,
+      },
+    },
+    get: {
+      method: 'GET' as const,
+      path: '/api/cases/:id' as const,
+      responses: {
+        200: z.any(),
+        404: errorSchemas.notFound,
+        401: errorSchemas.unauthorized,
+      },
+    },
+    create: {
+      method: 'POST' as const,
+      path: '/api/cases' as const,
+      input: insertCaseSchema,
+      responses: {
+        201: z.custom<typeof cases.$inferSelect>(),
+        400: errorSchemas.validation,
+        401: errorSchemas.unauthorized,
+      },
+    },
   },
   acknowledgments: {
     list: {
       method: 'GET' as const,
       path: '/api/acknowledgments' as const,
       responses: {
-        200: z.array(z.custom<typeof ack_docs.$inferSelect>()),
+        200: z.array(z.any()),
         401: errorSchemas.unauthorized,
       },
     },

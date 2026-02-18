@@ -4,7 +4,6 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 
-// Helper to generate ACK number: ACK-YYYYMMDD-####
 function generateAckNumber(): string {
   const date = new Date();
   const yyyy = date.getFullYear();
@@ -19,12 +18,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
-  // Middleware to simulate Auth (or verify Supabase token if we were doing strict backend auth)
-  // For this demo, we'll assume the client sends a user_id header or we fallback to a demo user
-  // In a real Supabase backend app, we'd verify the JWT here.
   const getUserId = (req: any) => {
-    // Check for a simulated user ID or header
-    // In production with Supabase, verify the Bearer token
     return req.headers['x-user-id'] || 'demo-user';
   };
 
@@ -35,6 +29,13 @@ export async function registerRoutes(
     res.json(data);
   });
 
+  app.get(api.facilities.get.path, async (req, res) => {
+    const userId = getUserId(req);
+    const data = await storage.getFacility(Number(req.params.id), userId as string);
+    if (!data) return res.status(404).json({ message: "Facility not found" });
+    res.json(data);
+  });
+
   app.post(api.facilities.create.path, async (req, res) => {
     const userId = getUserId(req);
     try {
@@ -42,11 +43,8 @@ export async function registerRoutes(
       const data = await storage.createFacility({ ...input, owner_user_id: userId as string });
       res.status(201).json(data);
     } catch (e) {
-      if (e instanceof z.ZodError) {
-        res.status(400).json(e.errors);
-      } else {
-        throw e;
-      }
+      if (e instanceof z.ZodError) res.status(400).json(e.errors);
+      else throw e;
     }
   });
 
@@ -58,11 +56,8 @@ export async function registerRoutes(
       if (!data) return res.status(404).json({ message: "Not found" });
       res.json(data);
     } catch (e) {
-      if (e instanceof z.ZodError) {
-        res.status(400).json(e.errors);
-      } else {
-        throw e;
-      }
+      if (e instanceof z.ZodError) res.status(400).json(e.errors);
+      else throw e;
     }
   });
 
@@ -79,6 +74,13 @@ export async function registerRoutes(
     res.json(data);
   });
 
+  app.get(api.patients.get.path, async (req, res) => {
+    const userId = getUserId(req);
+    const data = await storage.getPatient(Number(req.params.id), userId as string);
+    if (!data) return res.status(404).json({ message: "Patient not found" });
+    res.json(data);
+  });
+
   app.post(api.patients.create.path, async (req, res) => {
     const userId = getUserId(req);
     try {
@@ -86,34 +88,51 @@ export async function registerRoutes(
       const data = await storage.createPatient({ ...input, owner_user_id: userId as string });
       res.status(201).json(data);
     } catch (e) {
-      if (e instanceof z.ZodError) {
-        res.status(400).json(e.errors);
-      } else {
-        throw e;
-      }
+      if (e instanceof z.ZodError) res.status(400).json(e.errors);
+      else throw e;
     }
   });
 
-  app.put(api.patients.update.path, async (req, res) => {
+  app.post(api.patients.linkFacility.path, async (req, res) => {
     const userId = getUserId(req);
     try {
-      const input = api.patients.update.input.parse(req.body);
-      const data = await storage.updatePatient(Number(req.params.id), userId as string, input);
-      if (!data) return res.status(404).json({ message: "Not found" });
-      res.json(data);
+      const input = api.patients.linkFacility.input.parse(req.body);
+      const data = await storage.linkPatientToFacility({ 
+        ...input, 
+        patient_id: Number(req.params.id),
+        owner_user_id: userId as string 
+      });
+      res.status(201).json(data);
     } catch (e) {
-      if (e instanceof z.ZodError) {
-        res.status(400).json(e.errors);
-      } else {
-        throw e;
-      }
+      if (e instanceof z.ZodError) res.status(400).json(e.errors);
+      else throw e;
     }
   });
 
-  app.delete(api.patients.delete.path, async (req, res) => {
+  // Cases
+  app.get(api.cases.list.path, async (req, res) => {
     const userId = getUserId(req);
-    await storage.deletePatient(Number(req.params.id), userId as string);
-    res.status(204).send();
+    const data = await storage.getCases(userId as string);
+    res.json(data);
+  });
+
+  app.get(api.cases.get.path, async (req, res) => {
+    const userId = getUserId(req);
+    const data = await storage.getCase(Number(req.params.id), userId as string);
+    if (!data) return res.status(404).json({ message: "Case not found" });
+    res.json(data);
+  });
+
+  app.post(api.cases.create.path, async (req, res) => {
+    const userId = getUserId(req);
+    try {
+      const input = api.cases.create.input.parse(req.body);
+      const data = await storage.createCase({ ...input, owner_user_id: userId as string });
+      res.status(201).json(data);
+    } catch (e) {
+      if (e instanceof z.ZodError) res.status(400).json(e.errors);
+      else throw e;
+    }
   });
 
   // Acknowledgments
@@ -125,20 +144,26 @@ export async function registerRoutes(
 
   app.post(api.acknowledgments.create.path, async (req, res) => {
     const userId = getUserId(req);
-    try {
-      const input = api.acknowledgments.create.input.parse(req.body);
-      const ack_no = generateAckNumber();
-      const data = await storage.createAcknowledgment({ 
-        ...input, 
-        owner_user_id: userId as string,
-        ack_no 
-      });
-      res.status(201).json(data);
-    } catch (e) {
-      if (e instanceof z.ZodError) {
-        res.status(400).json(e.errors);
-      } else {
-        throw e;
+    let attempts = 0;
+    const maxAttempts = 5;
+    
+    while (attempts < maxAttempts) {
+      try {
+        const input = api.acknowledgments.create.input.parse(req.body);
+        const ack_no = generateAckNumber();
+        const data = await storage.createAcknowledgment({ 
+          ...input, 
+          owner_user_id: userId as string,
+          ack_no 
+        });
+        return res.status(201).json(data);
+      } catch (e: any) {
+        if (e.code === '23505' && attempts < maxAttempts - 1) {
+          attempts++;
+          continue;
+        }
+        if (e instanceof z.ZodError) return res.status(400).json(e.errors);
+        return res.status(500).json({ message: e.message });
       }
     }
   });
