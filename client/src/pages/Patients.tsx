@@ -1,3 +1,4 @@
+import { Link } from "wouter";
 import { useState } from "react";
 import { Layout } from "@/components/ui/Layout";
 import { usePatients, useCreatePatient, useUpdatePatient, useDeletePatient } from "@/hooks/use-patients";
@@ -61,6 +62,7 @@ export default function Patients() {
               <thead className="bg-slate-50 text-slate-500 font-medium">
                 <tr>
                   <th className="px-6 py-4">Name / Code</th>
+                  <th className="px-6 py-4">Primary Facility</th>
                   <th className="px-6 py-4">Contact</th>
                   <th className="px-6 py-4">Notes</th>
                   <th className="px-6 py-4 text-right">Actions</th>
@@ -72,22 +74,32 @@ export default function Patients() {
                     <tr key={i}>
                       <td className="px-6 py-4"><Skeleton className="h-4 w-32" /></td>
                       <td className="px-6 py-4"><Skeleton className="h-4 w-24" /></td>
+                      <td className="px-6 py-4"><Skeleton className="h-4 w-24" /></td>
                       <td className="px-6 py-4"><Skeleton className="h-4 w-48" /></td>
                       <td className="px-6 py-4"><Skeleton className="h-4 w-16 ml-auto" /></td>
                     </tr>
                   ))
                 ) : filteredPatients?.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-12 text-center text-slate-400">
+                    <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
                       <Users className="w-12 h-12 mx-auto mb-3 opacity-20" />
                       <p>No patients found</p>
                     </td>
                   </tr>
                 ) : (
-                  filteredPatients?.map((patient) => (
+                  filteredPatients?.map((patient: any) => (
                     <tr key={patient.id} className="group hover:bg-slate-50/80 transition-colors">
                       <td className="px-6 py-4 font-medium text-slate-900">
-                        {patient.name_or_code}
+                        <Link href={`/patients/${patient.id}`} className="text-blue-600 hover:underline">
+                          {patient.name_or_code}
+                        </Link>
+                      </td>
+                      <td className="px-6 py-4 text-slate-600">
+                        {patient.primary_facility ? (
+                          <Link href={`/facilities/${patient.primary_facility.facility_id}`} className="text-blue-600 hover:underline">
+                            {patient.primary_facility.facility_name}
+                          </Link>
+                        ) : "—"}
                       </td>
                       <td className="px-6 py-4 text-slate-600">
                         {patient.phone ? (

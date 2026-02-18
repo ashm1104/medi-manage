@@ -1,29 +1,26 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import { InsertFacility, Facility } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export function useFacilities() {
   return useQuery({
     queryKey: [api.facilities.list.path],
-    queryFn: async () => {
-      const res = await fetch(api.facilities.list.path);
-      if (!res.ok) throw new Error("Failed to fetch facilities");
-      return api.facilities.list.responses[200].parse(await res.json());
-    },
+  });
+}
+
+export function useFacility(id: number) {
+  return useQuery({
+    queryKey: [buildUrl(api.facilities.get.path, { id })],
+    enabled: !!id,
   });
 }
 
 export function useCreateFacility() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: InsertFacility) => {
-      const res = await fetch(api.facilities.create.path, {
-        method: api.facilities.create.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to create facility");
-      return api.facilities.create.responses[201].parse(await res.json());
+      const res = await apiRequest(api.facilities.create.method, api.facilities.create.path, data);
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.facilities.list.path] });
@@ -32,17 +29,10 @@ export function useCreateFacility() {
 }
 
 export function useUpdateFacility() {
-  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...data }: { id: number } & Partial<InsertFacility>) => {
-      const url = buildUrl(api.facilities.update.path, { id });
-      const res = await fetch(url, {
-        method: api.facilities.update.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to update facility");
-      return api.facilities.update.responses[200].parse(await res.json());
+    mutationFn: async ({ id, ...data }: Partial<Facility> & { id: number }) => {
+      const res = await apiRequest(api.facilities.update.method, buildUrl(api.facilities.update.path, { id }), data);
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.facilities.list.path] });
@@ -51,12 +41,9 @@ export function useUpdateFacility() {
 }
 
 export function useDeleteFacility() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) => {
-      const url = buildUrl(api.facilities.delete.path, { id });
-      const res = await fetch(url, { method: api.facilities.delete.method });
-      if (!res.ok) throw new Error("Failed to delete facility");
+      await apiRequest(api.facilities.delete.method, buildUrl(api.facilities.delete.path, { id }));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.facilities.list.path] });

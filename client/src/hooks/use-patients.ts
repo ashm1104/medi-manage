@@ -1,29 +1,26 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import { InsertPatient, Patient } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 export function usePatients() {
   return useQuery({
     queryKey: [api.patients.list.path],
-    queryFn: async () => {
-      const res = await fetch(api.patients.list.path);
-      if (!res.ok) throw new Error("Failed to fetch patients");
-      return api.patients.list.responses[200].parse(await res.json());
-    },
+  });
+}
+
+export function usePatient(id: number) {
+  return useQuery({
+    queryKey: [buildUrl(api.patients.get.path, { id })],
+    enabled: !!id,
   });
 }
 
 export function useCreatePatient() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (data: InsertPatient) => {
-      const res = await fetch(api.patients.create.path, {
-        method: api.patients.create.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to create patient");
-      return api.patients.create.responses[201].parse(await res.json());
+      const res = await apiRequest(api.patients.create.method, api.patients.create.path, data);
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
@@ -32,17 +29,10 @@ export function useCreatePatient() {
 }
 
 export function useUpdatePatient() {
-  const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...data }: { id: number } & Partial<InsertPatient>) => {
-      const url = buildUrl(api.patients.update.path, { id });
-      const res = await fetch(url, {
-        method: api.patients.update.method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to update patient");
-      return api.patients.update.responses[200].parse(await res.json());
+    mutationFn: async ({ id, ...data }: Partial<Patient> & { id: number }) => {
+      const res = await apiRequest(api.patients.update.method, buildUrl(api.patients.update.path, { id }), data);
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
@@ -51,14 +41,24 @@ export function useUpdatePatient() {
 }
 
 export function useDeletePatient() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) => {
-      const url = buildUrl(api.patients.delete.path, { id });
-      const res = await fetch(url, { method: api.patients.delete.method });
-      if (!res.ok) throw new Error("Failed to delete patient");
+      await apiRequest(api.patients.delete.method, buildUrl(api.patients.delete.path, { id }));
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
+    },
+  });
+}
+
+export function useLinkFacility() {
+  return useMutation({
+    mutationFn: async ({ patientId, data }: { patientId: number; data: any }) => {
+      const res = await apiRequest("POST", buildUrl(api.patients.linkFacility.path, { id: patientId }), data);
+      return res.json();
+    },
+    onSuccess: (_, { patientId }) => {
+      queryClient.invalidateQueries({ queryKey: [buildUrl(api.patients.get.path, { id: patientId })] });
       queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
     },
   });

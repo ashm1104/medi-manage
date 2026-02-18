@@ -23,6 +23,7 @@ export function Layout({ children }: LayoutProps) {
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/facilities", label: "Facilities", icon: Building2 },
     { href: "/patients", label: "Patients", icon: Users },
+    { href: "/cases", label: "Cases", icon: Stethoscope },
     { href: "/acknowledgments", label: "Acknowledgments", icon: FileCheck },
   ];
 

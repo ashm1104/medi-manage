@@ -1,3 +1,4 @@
+import { Link } from "wouter";
 import { useState } from "react";
 import { Layout } from "@/components/ui/Layout";
 import { useAcknowledgments, useCreateAcknowledgment, useDeleteAcknowledgment } from "@/hooks/use-acknowledgments";
@@ -113,10 +114,16 @@ export default function Acknowledgments() {
                           {format(new Date(ack.ack_date), "MMM d, yyyy")}
                         </td>
                         <td className="px-6 py-4 text-slate-600 font-medium">
-                          {getFacilityName(ack.facility_id)}
+                          <Link href={`/facilities/${ack.facility_id}`} className="text-blue-600 hover:underline">
+                            {getFacilityName(ack.facility_id)}
+                          </Link>
                         </td>
                         <td className="px-6 py-4 text-slate-600">
-                          {getPatientName(ack.patient_id)}
+                          {ack.patient_id ? (
+                            <Link href={`/patients/${ack.patient_id}`} className="text-blue-600 hover:underline">
+                              {getPatientName(ack.patient_id)}
+                            </Link>
+                          ) : "-"}
                         </td>
                         <td className="px-6 py-4">
                           <span className="text-xs font-semibold bg-slate-100 text-slate-600 px-2 py-1 rounded">

@@ -1,3 +1,4 @@
+import { Link } from "wouter";
 import { useState } from "react";
 import { Layout } from "@/components/ui/Layout";
 import { useFacilities, useCreateFacility, useUpdateFacility, useDeleteFacility } from "@/hooks/use-facilities";
@@ -97,7 +98,9 @@ export default function Facilities() {
                   filteredFacilities?.map((facility) => (
                     <tr key={facility.id} className="group hover:bg-slate-50/80 transition-colors">
                       <td className="px-6 py-4 font-medium text-slate-900">
-                        {facility.facility_name}
+                        <Link href={`/facilities/${facility.id}`} className="text-blue-600 hover:underline">
+                          {facility.facility_name}
+                        </Link>
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
