@@ -36,13 +36,13 @@ export default function Acknowledgments() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const filteredAcks = acks?.filter(a => 
-    a.ack_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    a.case_ref?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const getFacilityName = (id: number) => facilities?.find(f => f.id === id)?.facility_name || "Unknown";
   const getPatientName = (id?: number | null) => patients?.find(p => p.id === id)?.name_or_code || "-";
+
+  const filteredAcks = acks?.filter(a => 
+    (a.ack?.ack_no?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+    (a.ack?.case_ref?.toLowerCase() || "").includes(searchTerm.toLowerCase())
+  );
 
   return (
     <Layout>
