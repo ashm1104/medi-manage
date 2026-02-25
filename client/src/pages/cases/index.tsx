@@ -119,9 +119,11 @@ export default function Cases() {
                       </td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
-                          c.case.status === 'OPEN' 
-                            ? 'bg-blue-50 text-blue-700 border-blue-100' 
-                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                          c.case.status === 'OPEN'
+                            ? 'bg-blue-50 text-blue-700 border-blue-100'
+                            : c.case.status === "HOLD"
+                              ? 'bg-amber-50 text-amber-700 border-amber-100'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-100'
                         }`}>
                           {c.case.status}
                         </span>
@@ -155,19 +157,35 @@ function CreateCaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const { data: patients } = usePatients();
   const { data: facilities } = useFacilities();
   const createMutation = useCreateCase();
+  const [patientId, setPatientId] = useState<string | undefined>(undefined);
+  const [facilityId, setFacilityId] = useState("none");
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const data: any = Object.fromEntries(formData);
-    
-    data.patient_id = Number(data.patient_id);
-    if (data.primary_facility_id) data.primary_facility_id = Number(data.primary_facility_id);
-    else delete data.primary_facility_id;
+
+    if (!patientId) {
+      toast({ title: "Error", description: "Please select a patient", variant: "destructive" });
+      return;
+    }
+
+    const data: any = {
+      case_title: String(formData.get("case_title") || ""),
+      start_date: String(formData.get("start_date") || ""),
+      patient_id: patientId,
+    };
+
+    if (facilityId === "none" || !facilityId) {
+      delete data.primary_facility_id;
+    } else {
+      data.primary_facility_id = facilityId;
+    }
 
     createMutation.mutate(data as InsertCase, {
       onSuccess: () => {
         toast({ title: "Success", description: "Case created successfully" });
+        setPatientId(undefined);
+        setFacilityId("none");
         onOpenChange(false);
       },
       onError: (err) => {
@@ -191,7 +209,7 @@ function CreateCaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
 
           <div className="space-y-2">
             <Label htmlFor="patient_id">Patient *</Label>
-            <Select name="patient_id" required>
+            <Select value={patientId} onValueChange={setPatientId}>
               <SelectTrigger>
                 <SelectValue placeholder="Select patient" />
               </SelectTrigger>
@@ -205,7 +223,7 @@ function CreateCaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
 
           <div className="space-y-2">
             <Label htmlFor="primary_facility_id">Facility (Optional)</Label>
-            <Select name="primary_facility_id">
+            <Select value={facilityId} onValueChange={setFacilityId}>
               <SelectTrigger>
                 <SelectValue placeholder="Select facility" />
               </SelectTrigger>

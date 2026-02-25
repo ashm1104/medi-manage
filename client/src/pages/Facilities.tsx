@@ -164,7 +164,7 @@ export default function Facilities() {
   );
 }
 
-function DeleteButton({ id }: { id: number }) {
+function DeleteButton({ id }: { id: string }) {
   const { mutate, isPending } = useDeleteFacility();
   const { toast } = useToast();
 

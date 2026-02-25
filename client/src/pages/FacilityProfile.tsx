@@ -1,25 +1,72 @@
 import { useRoute } from "wouter";
+import { useEffect, useState } from "react";
 import { Layout } from "@/components/ui/Layout";
-import { useFacility } from "@/hooks/use-facilities";
+import { useFacility, useUpdateFacility } from "@/hooks/use-facilities";
 import { 
   Building2, Users, FileText, BriefcaseMedical, 
-  MapPin, Phone, User, Calendar
+  MapPin, Phone, User, Pencil
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { format } from "date-fns";
 
 export default function FacilityProfile() {
   const [, params] = useRoute("/facilities/:id");
-  const id = Number(params?.id);
+  const id = params?.id ?? "";
   const { data, isLoading } = useFacility(id);
+  const updateFacility = useUpdateFacility();
+  const { toast } = useToast();
+  const [isEditingLocationContact, setIsEditingLocationContact] = useState(false);
+  const [addressInput, setAddressInput] = useState("");
+  const [phoneInput, setPhoneInput] = useState("");
+
+  useEffect(() => {
+    if (!data?.facility) return;
+    setAddressInput(data.facility.address || "");
+    setPhoneInput(data.facility.phone || "");
+  }, [data?.facility?.id, data?.facility?.address, data?.facility?.phone]);
 
   if (isLoading) return <Layout><Skeleton className="h-full w-full" /></Layout>;
   if (!data) return <Layout>Facility not found</Layout>;
 
   const { facility, patients: linkedPatients, acknowledgments, cases } = data;
+
+  const handleStartEditingLocationContact = () => {
+    setAddressInput(facility.address || "");
+    setPhoneInput(facility.phone || "");
+    setIsEditingLocationContact(true);
+  };
+
+  const handleCancelEditingLocationContact = () => {
+    setAddressInput(facility.address || "");
+    setPhoneInput(facility.phone || "");
+    setIsEditingLocationContact(false);
+  };
+
+  const handleSaveLocationContact = () => {
+    updateFacility.mutate(
+      {
+        id: facility.id,
+        address: addressInput.trim(),
+        phone: phoneInput.trim(),
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Success", description: "Location and contact details updated." });
+          setIsEditingLocationContact(false);
+        },
+        onError: (e) => {
+          toast({ title: "Error", description: e.message, variant: "destructive" });
+        },
+      }
+    );
+  };
 
   return (
     <Layout>
@@ -98,20 +145,76 @@ export default function FacilityProfile() {
 
           <div className="space-y-6">
             <Card className="rounded-2xl border-slate-200">
-              <CardHeader className="border-b border-slate-100">
+              <CardHeader className="border-b border-slate-100 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <MapPin className="h-5 w-5 text-emerald-600" /> Location & Contact
                 </CardTitle>
+                {!isEditingLocationContact && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-slate-600"
+                    onClick={handleStartEditingLocationContact}
+                  >
+                    <Pencil className="h-4 w-4 mr-1" />
+                    Edit
+                  </Button>
+                )}
               </CardHeader>
-              <CardContent className="pt-6 space-y-4">
-                <div className="flex gap-3">
-                  <MapPin className="h-5 w-5 text-slate-400 shrink-0" />
-                  <span className="text-slate-600 text-sm">{facility.address || "No address provided"}</span>
-                </div>
-                <div className="flex gap-3">
-                  <Phone className="h-5 w-5 text-slate-400 shrink-0" />
-                  <span className="text-slate-600 text-sm">{facility.phone || "No contact number"}</span>
-                </div>
+              <CardContent className="pt-6">
+                {isEditingLocationContact ? (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="facility-profile-address">Address</Label>
+                      <Input
+                        id="facility-profile-address"
+                        value={addressInput}
+                        onChange={(e) => setAddressInput(e.target.value)}
+                        placeholder="Enter address"
+                        disabled={updateFacility.isPending}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="facility-profile-phone">Phone</Label>
+                      <Input
+                        id="facility-profile-phone"
+                        value={phoneInput}
+                        onChange={(e) => setPhoneInput(e.target.value)}
+                        placeholder="Enter contact number"
+                        disabled={updateFacility.isPending}
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleCancelEditingLocationContact}
+                        disabled={updateFacility.isPending}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        className="btn-primary"
+                        onClick={handleSaveLocationContact}
+                        disabled={updateFacility.isPending}
+                      >
+                        {updateFacility.isPending ? "Saving..." : "Save"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex gap-3">
+                      <MapPin className="h-5 w-5 text-slate-400 shrink-0" />
+                      <span className="text-slate-600 text-sm">{facility.address || "No address provided"}</span>
+                    </div>
+                    <div className="flex gap-3">
+                      <Phone className="h-5 w-5 text-slate-400 shrink-0" />
+                      <span className="text-slate-600 text-sm">{facility.phone || "No contact number"}</span>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

@@ -1,53 +1,136 @@
 import { useRoute } from "wouter";
 import { Layout } from "@/components/ui/Layout";
-import { usePatient, useLinkFacility } from "@/hooks/use-patients";
+import { usePatient, useLinkFacility, useUpdatePatient } from "@/hooks/use-patients";
 import { useFacilities } from "@/hooks/use-facilities";
-import { 
-  User, Phone, FileText, Building2, Calendar, 
-  Plus, History, BriefcaseMedical, CheckCircle2 
+import {
+  getAckPdfViewUrl,
+  useGenerateAckPdf,
+} from "@/hooks/use-acknowledgments";
+import {
+  User, Phone, Building2, Plus, History, BriefcaseMedical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
-import { format } from "date-fns";
-import { useState } from "react";
+import { format, isValid } from "date-fns";
+import { useEffect, useMemo, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function PatientProfile() {
   const [, params] = useRoute("/patients/:id");
-  const id = Number(params?.id);
-  const { data, isLoading } = usePatient(id);
+  const id = params?.id ?? "";
+  const { data: rawData, isLoading } = usePatient(id);
+  const data = (rawData as any) ?? null;
   const { data: allFacilities } = useFacilities();
+  const allFacilitiesList = (allFacilities as any[] | undefined) ?? [];
   const linkMutation = useLinkFacility();
+  const updatePatientMutation = useUpdatePatient();
   const { toast } = useToast();
-  
+
   const [selectedFacility, setSelectedFacility] = useState<string>("");
   const [isPrimary, setIsPrimary] = useState(false);
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState("");
+  const patient = data?.patient;
+  const linkedFacilitiesList = (data?.facilities as any[] | undefined) ?? [];
+  const acknowledgments = data?.acknowledgments ?? [];
+  const cases = data?.cases ?? [];
+  const uniqueLinkedFacilities = useMemo(() => {
+    const byId = new Map<string, any>();
+    for (const row of linkedFacilitiesList) {
+      const key = String(row.id);
+      const existing = byId.get(key);
+      if (!existing) {
+        byId.set(key, { ...row });
+        continue;
+      }
+      if (!existing.is_primary && row.is_primary) {
+        byId.set(key, { ...existing, is_primary: true });
+      }
+    }
+    return Array.from(byId.values());
+  }, [linkedFacilitiesList]);
+  const linkedFacilityIdSet = useMemo(() => {
+    return new Set(uniqueLinkedFacilities.map((row: any) => String(row.id)));
+  }, [uniqueLinkedFacilities]);
+  const linkableFacilities = useMemo(() => {
+    return allFacilitiesList.filter((f: any) => !linkedFacilityIdSet.has(String(f.id)));
+  }, [allFacilitiesList, linkedFacilityIdSet]);
+  const ackRows = (acknowledgments || []).map((row: any) => ({
+    ...row.ack,
+    facility_name: row.facility_name,
+  }));
+
+  useEffect(() => {
+    setNotesDraft(String(patient?.notes || ""));
+  }, [patient?.notes]);
 
   if (isLoading) return <Layout><Skeleton className="h-full w-full" /></Layout>;
-  if (!data) return <Layout>Patient not found</Layout>;
+  if (!data || !patient) return <Layout>Patient not found</Layout>;
 
-  const { patient, facilities: linkedFacilities, acknowledgments, cases } = data;
+  const getVisitShareForRow = (ack: any) => {
+    const splitText = String(ack.split_agreed || "").trim();
+    const match = splitText.match(/^(\d{1,3})\s*\/\s*(\d{1,3})$/);
+    if (!match) return ack.visiting_doc_share || "-";
+
+    const visitPct = Number(match[2]);
+    const paid = Number(ack.amount_paid);
+    if (!Number.isFinite(visitPct) || !Number.isFinite(paid)) return ack.visiting_doc_share || "-";
+
+    const share = Math.round((paid * (visitPct / 100) + Number.EPSILON) * 100) / 100;
+    return share.toFixed(2);
+  };
+
+  const formatAckDate = (value: unknown) => {
+    const parsed = value instanceof Date ? value : new Date(String(value));
+    return isValid(parsed) ? format(parsed, "MMM d, yyyy") : "-";
+  };
 
   const handleLink = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedFacility) return;
-    
+    if (linkedFacilityIdSet.has(String(selectedFacility))) {
+      toast({ title: "Already linked", description: "This facility is already linked to the patient.", variant: "destructive" });
+      return;
+    }
+
     linkMutation.mutate({
       patientId: id,
-      data: { facility_id: Number(selectedFacility), is_primary: isPrimary }
+      data: { facility_id: selectedFacility, is_primary: isPrimary },
     }, {
       onSuccess: () => {
         toast({ title: "Success", description: "Facility linked successfully" });
         setSelectedFacility("");
         setIsPrimary(false);
-      }
+      },
     });
+  };
+
+  const handleCancelNotes = () => {
+    setNotesDraft(String(patient?.notes || ""));
+    setIsEditingNotes(false);
+  };
+
+  const handleSaveNotes = () => {
+    updatePatientMutation.mutate(
+      { id, notes: notesDraft.trim() || null },
+      {
+        onSuccess: () => {
+          toast({ title: "Success", description: "Notes updated." });
+          setIsEditingNotes(false);
+        },
+        onError: (e) => {
+          toast({ title: "Error", description: e.message, variant: "destructive" });
+        },
+      },
+    );
   };
 
   return (
@@ -70,29 +153,50 @@ export default function PatientProfile() {
             <Card className="rounded-2xl border-slate-200">
               <CardHeader className="border-b border-slate-100">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <History className="h-5 w-5 text-blue-600" /> Recent Acknowledgments
+                  <History className="h-5 w-5 text-blue-600" /> Acknowledgment History
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-0">
+              <CardContent className="p-0 overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-slate-500 font-medium">
                     <tr>
-                      <th className="px-6 py-3 text-left">Ack No</th>
-                      <th className="px-6 py-3 text-left">Date</th>
-                      <th className="px-6 py-3 text-right">Amount</th>
+                      <th className="px-4 py-3 text-left">Ack No</th>
+                      <th className="px-4 py-3 text-left">Date</th>
+                      <th className="px-4 py-3 text-left">Facility</th>
+                      <th className="px-4 py-3 text-right">Final</th>
+                      <th className="px-4 py-3 text-right">Paid</th>
+                      <th className="px-4 py-3 text-right">Balance</th>
+                      <th className="px-4 py-3 text-left">Split</th>
+                      <th className="px-4 py-3 text-right">Visit Share</th>
+                      <th className="px-4 py-3 text-right">PDF</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {acknowledgments.length === 0 ? (
-                      <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-400">No records found</td></tr>
+                    {ackRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="px-6 py-8 text-center text-slate-400">No records found</td>
+                      </tr>
                     ) : (
-                      acknowledgments.map((ack: any) => (
-                        <tr key={ack.id}>
-                          <td className="px-6 py-4 font-mono">{ack.ack_no}</td>
-                          <td className="px-6 py-4">{format(new Date(ack.ack_date), "MMM d, yyyy")}</td>
-                          <td className="px-6 py-4 text-right font-medium">${Number(ack.amount_final).toFixed(2)}</td>
-                        </tr>
-                      ))
+                      ackRows.map((ack: any) => {
+                        const balance = ack.balance != null && Number.isFinite(Number(ack.balance))
+                          ? Number(ack.balance)
+                          : null;
+                        return (
+                          <tr key={ack.id}>
+                            <td className="px-4 py-4 font-mono">{ack.ack_no}</td>
+                            <td className="px-4 py-4">{formatAckDate(ack.ack_date)}</td>
+                            <td className="px-4 py-4">{ack.facility_name || "-"}</td>
+                            <td className="px-4 py-4 text-right">{Number(ack.amount_final).toFixed(2)}</td>
+                            <td className="px-4 py-4 text-right">{Number(ack.amount_paid).toFixed(2)}</td>
+                            <td className="px-4 py-4 text-right">{balance != null ? balance.toFixed(2) : "-"}</td>
+                            <td className="px-4 py-4">{ack.split_agreed || "-"}</td>
+                            <td className="px-4 py-4 text-right">{getVisitShareForRow(ack)}</td>
+                            <td className="px-4 py-4 text-right">
+                              <AckPdfActions ack={ack} />
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -117,7 +221,17 @@ export default function PatientProfile() {
                             <div className="font-medium text-slate-900">{c.case_title}</div>
                             <div className="text-xs text-slate-500">Started: {format(new Date(c.start_date), "MMM d, yyyy")}</div>
                           </div>
-                          <Badge variant={c.status === 'OPEN' ? 'default' : 'secondary'}>{c.status}</Badge>
+                          <Badge
+                            className={
+                              c.status === "OPEN"
+                                ? "bg-blue-600 text-white"
+                                : c.status === "HOLD"
+                                  ? "bg-amber-500 text-white"
+                                  : "bg-emerald-600 text-white"
+                            }
+                          >
+                            {c.status}
+                          </Badge>
                         </div>
                       </Link>
                     ))
@@ -136,7 +250,7 @@ export default function PatientProfile() {
               </CardHeader>
               <CardContent className="pt-6">
                 <div className="space-y-4">
-                  {linkedFacilities.map((f: any) => (
+                  {uniqueLinkedFacilities.map((f: any) => (
                     <div key={f.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/50">
                       <Link href={`/facilities/${f.id}`} className="font-medium text-blue-600 hover:underline">
                         {f.facility_name}
@@ -145,41 +259,142 @@ export default function PatientProfile() {
                     </div>
                   ))}
 
-                  <form onSubmit={handleLink} className="space-y-3 pt-4 border-t border-slate-100">
-                    <Label className="text-xs uppercase tracking-wider text-slate-400">Link New Facility</Label>
-                    <Select value={selectedFacility} onValueChange={setSelectedFacility}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select facility" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {allFacilities?.map((f: any) => (
-                          <SelectItem key={f.id} value={String(f.id)}>{f.facility_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <div className="flex items-center gap-2">
-                      <Checkbox id="primary" checked={isPrimary} onCheckedChange={(v) => setIsPrimary(!!v)} />
-                      <Label htmlFor="primary" className="text-sm">Set as primary facility</Label>
-                    </div>
-                    <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white" disabled={linkMutation.isPending}>
-                      Link Facility
-                    </Button>
-                  </form>
+                  {linkableFacilities.length > 0 && (
+                    <form onSubmit={handleLink} className="space-y-3 pt-4 border-t border-slate-100">
+                      <Label className="text-xs uppercase tracking-wider text-slate-400">Link New Facility</Label>
+                      <Select value={selectedFacility} onValueChange={setSelectedFacility}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select facility" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {linkableFacilities.map((f: any) => (
+                            <SelectItem key={f.id} value={String(f.id)}>{f.facility_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex items-center gap-2">
+                        <Checkbox id="primary" checked={isPrimary} onCheckedChange={(v) => setIsPrimary(!!v)} />
+                        <Label htmlFor="primary" className="text-sm">Set as primary facility</Label>
+                      </div>
+                      <Button
+                        type="submit"
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                        disabled={linkMutation.isPending || !selectedFacility}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Link Facility
+                      </Button>
+                    </form>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
             <Card className="rounded-2xl border-slate-200 bg-slate-900 text-white">
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Notes</CardTitle>
+                {!isEditingNotes ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-slate-600 bg-transparent text-white hover:bg-slate-800"
+                    onClick={() => setIsEditingNotes(true)}
+                  >
+                    Edit
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-slate-600 bg-transparent text-white hover:bg-slate-800"
+                      onClick={handleCancelNotes}
+                      disabled={updatePatientMutation.isPending}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                      onClick={handleSaveNotes}
+                      disabled={updatePatientMutation.isPending}
+                    >
+                      {updatePatientMutation.isPending ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                )}
               </CardHeader>
               <CardContent>
-                <p className="text-slate-300 text-sm whitespace-pre-wrap">{patient.notes || "No notes available for this patient."}</p>
+                {isEditingNotes ? (
+                  <Textarea
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    rows={4}
+                    className="resize-none border-slate-700 bg-slate-800 text-slate-100 placeholder:text-slate-400"
+                    placeholder="Add patient notes..."
+                  />
+                ) : (
+                  <p className="text-slate-300 text-sm whitespace-pre-wrap">{patient.notes || "No notes available for this patient."}</p>
+                )}
               </CardContent>
             </Card>
           </div>
         </div>
       </div>
     </Layout>
+  );
+}
+
+function AckPdfActions({ ack }: { ack: any }) {
+  const { mutate: generatePdf, isPending } = useGenerateAckPdf();
+  const { toast } = useToast();
+  const viewUrl = getAckPdfViewUrl(ack.id);
+  const hasPdf = !!ack.pdf_path;
+
+  const openPdf = async () => {
+    const popup = window.open("", "_blank", "noopener,noreferrer");
+    try {
+      const res = await apiRequest("GET", viewUrl);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      if (popup) {
+        popup.location.href = blobUrl;
+      } else {
+        window.open(blobUrl, "_blank", "noopener,noreferrer");
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    } catch (e: any) {
+      if (popup) popup.close();
+      toast({
+        title: "Error",
+        description: e?.message || "Failed to open PDF",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleGenerate = () => {
+    generatePdf(ack.id, {
+      onSuccess: () => {
+        toast({ title: "PDF ready", description: "Acknowledgment PDF generated." });
+        void openPdf();
+      },
+      onError: (e) => {
+        toast({ title: "Error", description: e.message, variant: "destructive" });
+      },
+    });
+  };
+
+  return (
+    <div className="flex items-center justify-end gap-2">
+      {hasPdf && (
+        <Button size="sm" variant="outline" onClick={() => void openPdf()}>
+          View PDF
+        </Button>
+      )}
+      <Button size="sm" onClick={handleGenerate} disabled={isPending}>
+        {isPending ? "Generating..." : hasPdf ? "Regenerate" : "Generate PDF"}
+      </Button>
+    </div>
   );
 }

@@ -146,7 +146,7 @@ export default function Patients() {
   );
 }
 
-function DeleteButton({ id }: { id: number }) {
+function DeleteButton({ id }: { id: string }) {
   const { mutate, isPending } = useDeletePatient();
   const { toast } = useToast();
 

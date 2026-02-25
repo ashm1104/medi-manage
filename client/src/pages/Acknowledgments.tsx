@@ -1,10 +1,18 @@
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { useState } from "react";
 import { Layout } from "@/components/ui/Layout";
-import { useAcknowledgments, useCreateAcknowledgment, useDeleteAcknowledgment } from "@/hooks/use-acknowledgments";
+import {
+  getAckPdfViewUrl,
+  useAcknowledgments,
+  useCreateAcknowledgment,
+  useDeleteAcknowledgment,
+  useGenerateAckPdf,
+  useLatestAcknowledgment,
+} from "@/hooks/use-acknowledgments";
+import { useCases } from "@/hooks/use-cases";
 import { useFacilities } from "@/hooks/use-facilities";
-import { usePatients } from "@/hooks/use-patients";
-import { Plus, Search, Trash2, FileCheck, FileText, Calendar, DollarSign, Calculator } from "lucide-react";
+import { usePatientFacilities, usePatients } from "@/hooks/use-patients";
+import { Plus, Search, Trash2, FileCheck, DollarSign, Calculator } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -26,23 +34,32 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { InsertAckDoc } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Acknowledgments() {
   const { data: acks, isLoading: loadingAcks } = useAcknowledgments();
   const { data: facilities } = useFacilities();
   const { data: patients } = usePatients();
-  
+  const facilitiesList = (facilities as any[] | undefined) ?? [];
+  const patientsList = (patients as any[] | undefined) ?? [];
+
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  const getFacilityName = (id: number) => facilities?.find(f => f.id === id)?.facility_name || "Unknown";
-  const getPatientName = (id?: number | null) => patients?.find(p => p.id === id)?.name_or_code || "-";
+  const getFacilityName = (id: string) => facilitiesList.find((f: any) => f.id === id)?.facility_name || "Unknown";
+  const getPatientName = (id?: string | null) => patientsList.find((p: any) => p.id === id)?.name_or_code || "-";
 
-  const filteredAcks = acks?.filter(a => 
-    (a.ack?.ack_no?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-    (a.ack?.case_ref?.toLowerCase() || "").includes(searchTerm.toLowerCase())
+  const ackItems = (acks as any[] | undefined)?.map((row) => row?.ack ?? row) ?? [];
+  const filteredAcks = ackItems.filter((a: any) =>
+    (a?.ack_no?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+    (a?.case_ref?.toLowerCase() || "").includes(searchTerm.toLowerCase()),
   );
+
+  const formatAckDate = (value: unknown) => {
+    const parsed = value instanceof Date ? value : new Date(String(value));
+    return isValid(parsed) ? format(parsed, "MMM d, yyyy") : "-";
+  };
 
   return (
     <Layout>
@@ -52,10 +69,7 @@ export default function Acknowledgments() {
             <h2 className="text-3xl font-display font-bold text-slate-900">Acknowledgments</h2>
             <p className="text-slate-500">Track visit and payment records.</p>
           </div>
-          <Button 
-            onClick={() => setIsDialogOpen(true)}
-            className="btn-primary"
-          >
+          <Button onClick={() => setIsDialogOpen(true)} className="btn-primary">
             <Plus className="w-4 h-4 mr-2" />
             Create Ack
           </Button>
@@ -64,7 +78,7 @@ export default function Acknowledgments() {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
             <Search className="w-5 h-5 text-slate-400" />
-            <input 
+            <input
               type="text"
               placeholder="Search by ACK No or Case Ref..."
               className="bg-transparent border-none outline-none text-sm w-full placeholder:text-slate-400"
@@ -103,16 +117,14 @@ export default function Acknowledgments() {
                     </td>
                   </tr>
                 ) : (
-                  filteredAcks?.map((ack) => {
-                    const balance = Number(ack.amount_final) - Number(ack.amount_paid);
+                  filteredAcks.map((ack: any) => {
+                    const balance = ack.balance != null && Number.isFinite(Number(ack.balance))
+                      ? Number(ack.balance)
+                      : null;
                     return (
                       <tr key={ack.id} className="group hover:bg-slate-50/80 transition-colors">
-                        <td className="px-6 py-4 font-mono font-medium text-slate-900">
-                          {ack.ack_no}
-                        </td>
-                        <td className="px-6 py-4 text-slate-600">
-                          {format(new Date(ack.ack_date), "MMM d, yyyy")}
-                        </td>
+                        <td className="px-6 py-4 font-mono font-medium text-slate-900">{ack.ack_no}</td>
+                        <td className="px-6 py-4 text-slate-600">{formatAckDate(ack.ack_date)}</td>
                         <td className="px-6 py-4 text-slate-600 font-medium">
                           <Link href={`/facilities/${ack.facility_id}`} className="text-blue-600 hover:underline">
                             {getFacilityName(ack.facility_id)}
@@ -130,30 +142,19 @@ export default function Acknowledgments() {
                             {ack.ack_type}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-right font-medium text-slate-900">
-                          {Number(ack.amount_final).toFixed(2)}
-                        </td>
-                        <td className="px-6 py-4 text-right text-green-600">
-                          {Number(ack.amount_paid).toFixed(2)}
-                        </td>
-                        <td className={`px-6 py-4 text-right font-bold ${balance > 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                          {balance.toFixed(2)}
+                        <td className="px-6 py-4 text-right font-medium text-slate-900">{Number(ack.amount_final).toFixed(2)}</td>
+                        <td className="px-6 py-4 text-right text-green-600">{Number(ack.amount_paid).toFixed(2)}</td>
+                        <td className={`px-6 py-4 text-right font-bold ${balance != null && balance > 0 ? "text-red-500" : "text-slate-400"}`}>
+                          {balance != null ? balance.toFixed(2) : "-"}
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              className="h-8 text-xs bg-primary/5 hover:bg-primary/10 text-primary border border-primary/20"
-                              onClick={() => alert("PDF Generation logic pending...")}
-                            >
-                              PDF
-                            </Button>
+                            <PdfActions ack={ack} />
                             <DeleteButton id={ack.id} />
                           </div>
                         </td>
                       </tr>
-                    )
+                    );
                   })
                 )}
               </tbody>
@@ -162,31 +163,95 @@ export default function Acknowledgments() {
         </div>
       </div>
 
-      <CreateAckDialog 
-        open={isDialogOpen} 
-        onOpenChange={setIsDialogOpen} 
-        facilities={facilities || []}
-        patients={patients || []}
+      <CreateAckDialog
+        open={isDialogOpen}
+        onOpenChange={setIsDialogOpen}
+        patients={patientsList}
       />
     </Layout>
   );
 }
 
-function DeleteButton({ id }: { id: number }) {
+function PdfActions({ ack }: { ack: any }) {
+  const { mutate: generatePdf, isPending } = useGenerateAckPdf();
+  const { toast } = useToast();
+  const viewUrl = getAckPdfViewUrl(ack.id);
+  const hasPdf = !!ack.pdf_path;
+
+  const openPdf = async () => {
+    const popup = window.open("", "_blank", "noopener,noreferrer");
+    try {
+      const res = await apiRequest("GET", viewUrl);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      if (popup) {
+        popup.location.href = blobUrl;
+      } else {
+        window.open(blobUrl, "_blank", "noopener,noreferrer");
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    } catch (e: any) {
+      if (popup) popup.close();
+      toast({
+        title: "Error",
+        description: e?.message || "Failed to open PDF",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleGenerate = () => {
+    generatePdf(ack.id, {
+      onSuccess: () => {
+        toast({ title: "PDF ready", description: "Acknowledgment PDF generated." });
+        void openPdf();
+      },
+      onError: (e) => {
+        toast({ title: "Error", description: e.message, variant: "destructive" });
+      },
+    });
+  };
+
+  return (
+    <>
+      {hasPdf && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200"
+          onClick={openPdf}
+        >
+          View PDF
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8 text-xs bg-primary/5 hover:bg-primary/10 text-primary border border-primary/20"
+        disabled={isPending}
+        onClick={handleGenerate}
+      >
+        {isPending ? "Generating..." : hasPdf ? "Regenerate" : "Generate PDF"}
+      </Button>
+    </>
+  );
+}
+
+function DeleteButton({ id }: { id: string }) {
   const { mutate, isPending } = useDeleteAcknowledgment();
   const { toast } = useToast();
 
   return (
-    <Button 
-      variant="ghost" 
-      size="icon" 
+    <Button
+      variant="ghost"
+      size="icon"
       className="h-8 w-8 hover:bg-red-50 hover:text-red-600"
       disabled={isPending}
       onClick={() => {
         if (confirm("Delete this record?")) {
           mutate(id, {
             onSuccess: () => toast({ title: "Deleted", description: "Record deleted." }),
-            onError: (e) => toast({ title: "Error", description: e.message, variant: "destructive" })
+            onError: (e) => toast({ title: "Error", description: e.message, variant: "destructive" }),
           });
         }
       }}
@@ -196,53 +261,179 @@ function DeleteButton({ id }: { id: number }) {
   );
 }
 
-function CreateAckDialog({ 
-  open, 
+function CreateAckDialog({
+  open,
   onOpenChange,
-  facilities,
-  patients
-}: { 
-  open: boolean; 
-  onOpenChange: (open: boolean) => void; 
-  facilities: any[];
+  patients,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   patients: any[];
 }) {
   const { toast } = useToast();
   const { mutate, isPending } = useCreateAcknowledgment();
-  const [amountFinal, setAmountFinal] = useState<string>("");
-  const [amountPaid, setAmountPaid] = useState<string>("");
+  const { data: casesData } = useCases();
 
-  const balance = (Number(amountFinal || 0) - Number(amountPaid || 0)).toFixed(2);
+  const [selectedPatientId, setSelectedPatientId] = useState("");
+  const [selectedFacilityId, setSelectedFacilityId] = useState("");
+  const [ackType, setAckType] = useState("VISIT");
+  const [ackDate, setAckDate] = useState(new Date().toISOString().split("T")[0]);
+  const [caseRef, setCaseRef] = useState("");
+  const [splitAgreed, setSplitAgreed] = useState("");
+  const [notes, setNotes] = useState("");
+  const [amountFinal, setAmountFinal] = useState("");
+  const [amountPaid, setAmountPaid] = useState("");
+  const allCases = (casesData as any[] | undefined) ?? [];
+  const patientCases = useMemo(() => {
+    if (!selectedPatientId) return [];
+    return allCases.filter((row: any) => String(row?.case?.patient_id) === String(selectedPatientId));
+  }, [allCases, selectedPatientId]);
+
+  const { data: mappedFacilities = [] } = usePatientFacilities(selectedPatientId);
+  const { data: latestAckRaw } = useLatestAcknowledgment(selectedPatientId, selectedFacilityId);
+  const latestAck = (latestAckRaw as any) ?? null;
+
+  const sortedFacilities = useMemo(() => {
+    return [...(mappedFacilities as any[])].sort((a, b) => {
+      if (!!a.is_primary && !b.is_primary) return -1;
+      if (!a.is_primary && !!b.is_primary) return 1;
+      return String(a.facility_name || "").localeCompare(String(b.facility_name || ""));
+    });
+  }, [mappedFacilities]);
+
+  useEffect(() => {
+    if (!selectedPatientId) return;
+    if (sortedFacilities.length === 1) {
+      setSelectedFacilityId(String(sortedFacilities[0].id));
+      return;
+    }
+    const primary = sortedFacilities.find((f) => f.is_primary);
+    if (primary) setSelectedFacilityId(String(primary.id));
+  }, [selectedPatientId, sortedFacilities]);
+
+  useEffect(() => {
+    if (!caseRef) return;
+    const existsInPatientCases = patientCases.some((row: any) => String(row?.case?.id) === String(caseRef));
+    if (!existsInPatientCases) {
+      setCaseRef("");
+    }
+  }, [patientCases, caseRef]);
+
+  useEffect(() => {
+    if (!selectedPatientId || caseRef || patientCases.length === 0) return;
+    const latestPatientCaseId = patientCases[0]?.case?.id;
+    if (latestPatientCaseId) {
+      setCaseRef(String(latestPatientCaseId));
+    }
+  }, [selectedPatientId, patientCases, caseRef]);
+
+  useEffect(() => {
+    if (!selectedFacilityId) {
+      setAmountFinal("");
+      setAmountPaid("");
+      setSplitAgreed("");
+      return;
+    }
+
+    if (!latestAck) {
+      setAmountFinal("");
+      setAmountPaid("");
+      setSplitAgreed("");
+      return;
+    }
+
+    setAmountFinal(latestAck.amount_final != null ? String(latestAck.amount_final) : "");
+    setAmountPaid("");
+    setSplitAgreed(latestAck.split_agreed != null ? String(latestAck.split_agreed) : "");
+    if (!caseRef && latestAck.case_ref != null) {
+      const latestCaseRef = String(latestAck.case_ref);
+      const existsInPatientCases = patientCases.some((row: any) => String(row?.case?.id) === latestCaseRef);
+      if (existsInPatientCases) {
+        setCaseRef(latestCaseRef);
+      }
+    }
+  }, [selectedFacilityId, latestAck, caseRef, patientCases]);
+
+  const latestAckBalance = latestAck && Number.isFinite(Number(latestAck.balance))
+    ? Number(latestAck.balance)
+    : null;
+  const lastPaidAmount = latestAck && Number.isFinite(Number(latestAck.amount_paid))
+    ? Number(latestAck.amount_paid)
+    : null;
+  const balanceBase = latestAckBalance != null ? latestAckBalance : Number(amountFinal || 0);
+  const balanceNumber = balanceBase - Number(amountPaid || 0);
+  const balance = balanceNumber.toFixed(2);
+  const lastPaidAmountDisplay = lastPaidAmount != null ? lastPaidAmount.toFixed(2) : null;
+
+  const resetForm = () => {
+    setSelectedPatientId("");
+    setSelectedFacilityId("");
+    setAckType("VISIT");
+    setAckDate(new Date().toISOString().split("T")[0]);
+    setCaseRef("");
+    setSplitAgreed("");
+    setNotes("");
+    setAmountFinal("");
+    setAmountPaid("");
+  };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const data: any = Object.fromEntries(formData);
-    
-    // Coercion and cleanup
-    if (data.facility_id) data.facility_id = Number(data.facility_id);
-    if (data.patient_id) {
-      data.patient_id = Number(data.patient_id);
-    } else {
-      delete data.patient_id;
+    const final = Number(amountFinal);
+    const paid = Number(amountPaid);
+
+    if (!selectedPatientId) {
+      toast({ title: "Validation error", description: "Please select a patient.", variant: "destructive" });
+      return;
     }
-    
-    // Ensure numbers are strings for numeric/decimal db types if needed, 
-    // or numbers if schema expects numbers. Zod coerce handles it usually, 
-    // but schema says `numeric` which often comes back as string from DB, 
-    // but input schema usually handles number or string. 
-    // Our schema defines them as numeric, insertSchema usually expects number or string.
-    
-    mutate(data as InsertAckDoc, {
+    if (!selectedFacilityId) {
+      toast({ title: "Validation error", description: "Please select a facility.", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(final) || final < 0) {
+      toast({ title: "Validation error", description: "Final amount must be >= 0.", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(paid) || paid < 0) {
+      toast({ title: "Validation error", description: "Paid amount must be >= 0.", variant: "destructive" });
+      return;
+    }
+    if (paid > balanceBase) {
+      toast({
+        title: "Validation error",
+        description: latestAckBalance != null
+          ? "Amount paid cannot exceed previous balance."
+          : "Amount paid cannot exceed final amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const payload: InsertAckDoc = {
+      ack_no: "",
+      ack_type: ackType,
+      facility_id: selectedFacilityId,
+      patient_id: selectedPatientId,
+      case_ref: caseRef || null,
+      split_agreed: splitAgreed || null,
+      ack_date: ackDate,
+      amount_final: String(final),
+      amount_paid: String(paid),
+      balance: (balanceBase - paid).toFixed(2),
+      visiting_doc_share: null,
+      pdf_path: null,
+      notes: notes || null,
+    };
+
+    mutate(payload, {
       onSuccess: () => {
-        toast({ title: "Success", description: "Acknowledgment created" });
+        toast({ title: "Success", description: "Acknowledgment created." });
         onOpenChange(false);
-        setAmountFinal("");
-        setAmountPaid("");
+        resetForm();
       },
       onError: (err) => {
         toast({ title: "Error", description: err.message, variant: "destructive" });
-      }
+      },
     });
   };
 
@@ -251,15 +442,34 @@ function CreateAckDialog({
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Create Acknowledgment</DialogTitle>
-          <DialogDescription>
-            Record a new visit or payment.
-          </DialogDescription>
+          <DialogDescription>Record a new visit or payment.</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
+              <Label htmlFor="patient_id">Patient *</Label>
+              <Select value={selectedPatientId} onValueChange={(value) => {
+                setSelectedPatientId(value);
+                setSelectedFacilityId("");
+                setCaseRef("");
+                setAmountFinal("");
+                setAmountPaid("");
+                setSplitAgreed("");
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Patient" />
+                </SelectTrigger>
+                <SelectContent>
+                  {patients.map((p: any) => (
+                    <SelectItem key={p.id} value={String(p.id)}>{p.name_or_code}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="ack_type">Type *</Label>
-              <Select name="ack_type" required defaultValue="VISIT">
+              <Select value={ackType} onValueChange={setAckType}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select Type" />
                 </SelectTrigger>
@@ -273,43 +483,18 @@ function CreateAckDialog({
 
             <div className="space-y-2">
               <Label htmlFor="ack_date">Date *</Label>
-              <Input 
-                id="ack_date" 
-                name="ack_date" 
-                type="date" 
-                required 
-                defaultValue={new Date().toISOString().split('T')[0]}
-              />
+              <Input id="ack_date" type="date" required value={ackDate} onChange={(e) => setAckDate(e.target.value)} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="facility_id">Facility *</Label>
-              <Select name="facility_id" required>
+              <Select value={selectedFacilityId} onValueChange={setSelectedFacilityId} disabled={!selectedPatientId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select Facility" />
+                  <SelectValue placeholder={selectedPatientId ? "Select Facility" : "Select patient first"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {facilities.map(f => (
-                    <SelectItem key={f.id} value={String(f.id)}>
-                      {f.facility_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="patient_id">Patient</Label>
-              <Select name="patient_id">
-                <SelectTrigger>
-                  <SelectValue placeholder="Optional" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">None</SelectItem>
-                  {patients.map(p => (
-                    <SelectItem key={p.id} value={String(p.id)}>
-                      {p.name_or_code}
-                    </SelectItem>
+                  {sortedFacilities.map((f: any) => (
+                    <SelectItem key={f.id} value={String(f.id)}>{f.facility_name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -317,13 +502,44 @@ function CreateAckDialog({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-             <div className="space-y-2">
+            <div className="space-y-2">
               <Label htmlFor="case_ref">Case Reference</Label>
-              <Input id="case_ref" name="case_ref" placeholder="e.g. #CASE-123" />
+              <Select
+                value={caseRef || "none"}
+                onValueChange={(value) => setCaseRef(value === "none" ? "" : value)}
+                disabled={!selectedPatientId || patientCases.length === 0}
+              >
+                <SelectTrigger id="case_ref">
+                  <SelectValue
+                    placeholder={
+                      !selectedPatientId
+                        ? "Select patient first"
+                        : patientCases.length === 0
+                          ? "No cases for this patient"
+                          : "Select case"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {patientCases.map((row: any) => (
+                    <SelectItem key={String(row.case.id)} value={String(row.case.id)}>
+                      {row.case.case_title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="split_agreed">Split Agreed</Label>
-              <Input id="split_agreed" name="split_agreed" placeholder="e.g. 60/40" />
+              <Input id="split_agreed" placeholder="e.g. 60/40" value={splitAgreed} onChange={(e) => setSplitAgreed(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Last Paid Amount</Label>
+            <div className="h-10 w-full px-3 py-2 rounded-md border border-slate-200 bg-slate-50 text-sm font-medium text-slate-700 flex items-center">
+              {lastPaidAmountDisplay ?? "-"}
             </div>
           </div>
 
@@ -332,12 +548,11 @@ function CreateAckDialog({
               <Label htmlFor="amount_final">Final Amount *</Label>
               <div className="relative">
                 <DollarSign className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                <Input 
-                  id="amount_final" 
-                  name="amount_final" 
-                  type="number" 
-                  step="0.01" 
-                  className="pl-9 bg-white" 
+                <Input
+                  id="amount_final"
+                  type="number"
+                  step="0.01"
+                  className="pl-9 bg-white"
                   required
                   value={amountFinal}
                   onChange={(e) => setAmountFinal(e.target.value)}
@@ -348,12 +563,11 @@ function CreateAckDialog({
               <Label htmlFor="amount_paid">Amount Paid *</Label>
               <div className="relative">
                 <DollarSign className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                <Input 
-                  id="amount_paid" 
-                  name="amount_paid" 
-                  type="number" 
-                  step="0.01" 
-                  className="pl-9 bg-white" 
+                <Input
+                  id="amount_paid"
+                  type="number"
+                  step="0.01"
+                  className="pl-9 bg-white"
                   required
                   value={amountPaid}
                   onChange={(e) => setAmountPaid(e.target.value)}
@@ -373,7 +587,7 @@ function CreateAckDialog({
 
           <div className="space-y-2">
             <Label htmlFor="notes">Notes</Label>
-            <Textarea id="notes" name="notes" placeholder="Additional details..." rows={2} />
+            <Textarea id="notes" placeholder="Additional details..." rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
 
           <div className="pt-4 flex justify-end gap-2">

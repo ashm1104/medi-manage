@@ -9,7 +9,7 @@ export function usePatients() {
   });
 }
 
-export function usePatient(id: number) {
+export function usePatient(id: string) {
   return useQuery({
     queryKey: [buildUrl(api.patients.get.path, { id })],
     enabled: !!id,
@@ -30,19 +30,20 @@ export function useCreatePatient() {
 
 export function useUpdatePatient() {
   return useMutation({
-    mutationFn: async ({ id, ...data }: Partial<Patient> & { id: number }) => {
+    mutationFn: async ({ id, ...data }: Partial<Patient> & { id: string }) => {
       const res = await apiRequest(api.patients.update.method, buildUrl(api.patients.update.path, { id }), data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
+      queryClient.invalidateQueries({ queryKey: [buildUrl(api.patients.get.path, { id: variables.id })] });
     },
   });
 }
 
 export function useDeletePatient() {
   return useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async (id: string) => {
       await apiRequest(api.patients.delete.method, buildUrl(api.patients.delete.path, { id }));
     },
     onSuccess: () => {
@@ -53,7 +54,7 @@ export function useDeletePatient() {
 
 export function useLinkFacility() {
   return useMutation({
-    mutationFn: async ({ patientId, data }: { patientId: number; data: any }) => {
+    mutationFn: async ({ patientId, data }: { patientId: string; data: any }) => {
       const res = await apiRequest("POST", buildUrl(api.patients.linkFacility.path, { id: patientId }), data);
       return res.json();
     },
@@ -61,5 +62,12 @@ export function useLinkFacility() {
       queryClient.invalidateQueries({ queryKey: [buildUrl(api.patients.get.path, { id: patientId })] });
       queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
     },
+  });
+}
+
+export function usePatientFacilities(patientId: string) {
+  return useQuery({
+    queryKey: [buildUrl(api.patients.facilities.path, { patientId })],
+    enabled: !!patientId,
   });
 }

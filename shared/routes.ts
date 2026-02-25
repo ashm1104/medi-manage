@@ -92,7 +92,7 @@ export const api = {
         200: z.object({
           patient: z.custom<typeof patients.$inferSelect>(),
           facilities: z.array(z.any()),
-          acknowledgments: z.array(z.custom<typeof ack_docs.$inferSelect>()),
+          acknowledgments: z.array(z.any()),
           cases: z.array(z.custom<typeof cases.$inferSelect>()),
         }),
         404: errorSchemas.notFound,
@@ -139,6 +139,14 @@ export const api = {
         401: errorSchemas.unauthorized,
       },
     },
+    facilities: {
+      method: 'GET' as const,
+      path: '/api/patients/:patientId/facilities' as const,
+      responses: {
+        200: z.array(z.any()),
+        401: errorSchemas.unauthorized,
+      },
+    },
   },
   cases: {
     list: {
@@ -168,6 +176,17 @@ export const api = {
         401: errorSchemas.unauthorized,
       },
     },
+    update: {
+      method: 'PUT' as const,
+      path: '/api/cases/:id' as const,
+      input: insertCaseSchema.partial(),
+      responses: {
+        200: z.custom<typeof cases.$inferSelect>(),
+        400: errorSchemas.validation,
+        404: errorSchemas.notFound,
+        401: errorSchemas.unauthorized,
+      },
+    },
   },
   acknowledgments: {
     list: {
@@ -193,6 +212,32 @@ export const api = {
       path: '/api/acknowledgments/:id' as const,
       responses: {
         204: z.void(),
+        404: errorSchemas.notFound,
+        401: errorSchemas.unauthorized,
+      },
+    },
+    latest: {
+      method: 'GET' as const,
+      path: '/api/ack_docs/latest' as const,
+      responses: {
+        200: z.custom<typeof ack_docs.$inferSelect>().nullable(),
+        401: errorSchemas.unauthorized,
+      },
+    },
+    generatePdf: {
+      method: 'POST' as const,
+      path: '/api/ack_docs/:id/generate_pdf' as const,
+      responses: {
+        200: z.object({ pdf_path: z.string() }),
+        404: errorSchemas.notFound,
+        401: errorSchemas.unauthorized,
+      },
+    },
+    viewPdf: {
+      method: 'GET' as const,
+      path: '/api/ack_docs/:id/pdf' as const,
+      responses: {
+        200: z.any(),
         404: errorSchemas.notFound,
         401: errorSchemas.unauthorized,
       },
