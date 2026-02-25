@@ -37,6 +37,24 @@ function loadLocalEnv() {
   }
 }
 
+function warnIfSupabaseDirectHost(databaseUrl: string) {
+  try {
+    const url = new URL(databaseUrl);
+    const host = url.hostname.toLowerCase();
+    const isSupabaseDirectHost =
+      host.startsWith("db.") && host.endsWith(".supabase.co");
+    const usesPooler = host.includes(".pooler.supabase.com");
+
+    if (isSupabaseDirectHost && !usesPooler) {
+      console.warn(
+        "[db] DATABASE_URL appears to use Supabase direct DB host (IPv6-only in many regions). For Render/free IPv4 networks, prefer the Supabase pooler URL on port 6543.",
+      );
+    }
+  } catch {
+    // Ignore parse failures and rely on pg connection errors for invalid URLs.
+  }
+}
+
 loadLocalEnv();
 
 if (!process.env.DATABASE_URL) {
@@ -44,6 +62,8 @@ if (!process.env.DATABASE_URL) {
     "DATABASE_URL must be set. Add it in your shell environment or create a .env/.env.local file.",
   );
 }
+
+warnIfSupabaseDirectHost(process.env.DATABASE_URL);
 
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 export const db = drizzle(pool, { schema });
