@@ -35,10 +35,28 @@ function PrivateRoute({ component: Component, ...rest }: any) {
   return <Component {...rest} />;
 }
 
+function PublicRoute({ component: Component, ...rest }: any) {
+  const { session, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
+      </div>
+    );
+  }
+
+  if (session) {
+    return <Redirect to="/dashboard" />;
+  }
+
+  return <Component {...rest} />;
+}
+
 function Router() {
   return (
     <Switch>
-      <Route path="/login" component={Login} />
+      <Route path="/login">{() => <PublicRoute component={Login} />}</Route>
       
       {/* Protected Routes */}
       <Route path="/">

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
 import { supabase } from "@/lib/supabase";
 import { Stethoscope, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,54 +10,84 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  const toReadableAuthError = (message: string) => {
+    if (message.toLowerCase().includes("failed to fetch")) {
+      return "Could not reach Supabase Auth. Check internet, browser privacy/extension blocking, and Render VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY values.";
+    }
+    return message;
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      toast({
-        title: "Login Failed",
-        description: error.message,
-        variant: "destructive",
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
       });
-      setLoading(false);
-    } else {
+
+      if (error) {
+        toast({
+          title: "Login Failed",
+          description: toReadableAuthError(error.message),
+          variant: "destructive",
+        });
+        return;
+      }
+
       toast({
         title: "Welcome back!",
         description: "Successfully logged in.",
       });
-      setLocation("/dashboard");
+    } catch (error) {
+      toast({
+        title: "Login Failed",
+        description:
+          error instanceof Error
+            ? toReadableAuthError(error.message)
+            : "Unexpected error during login.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleSignUp = async () => {
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-
-    if (error) {
-      toast({
-        title: "Signup Failed",
-        description: error.message,
-        variant: "destructive",
+    try {
+      const { error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
       });
-    } else {
+
+      if (error) {
+        toast({
+          title: "Signup Failed",
+          description: toReadableAuthError(error.message),
+          variant: "destructive",
+        });
+        return;
+      }
+
       toast({
         title: "Account Created",
         description: "Please check your email to verify your account, or login if auto-confirmed.",
       });
+    } catch (error) {
+      toast({
+        title: "Signup Failed",
+        description:
+          error instanceof Error
+            ? toReadableAuthError(error.message)
+            : "Unexpected error during signup.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
