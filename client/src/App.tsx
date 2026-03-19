@@ -12,9 +12,9 @@ import Facilities from "@/pages/Facilities";
 import FacilityProfile from "@/pages/FacilityProfile";
 import Patients from "@/pages/Patients";
 import PatientProfile from "@/pages/PatientProfile";
-import Cases from "@/pages/cases/index";
-import CaseProfile from "@/pages/CaseProfile";
 import Acknowledgments from "@/pages/Acknowledgments";
+import TreatmentProfile from "@/pages/TreatmentProfile";
+import LegacyCaseRedirect from "@/pages/LegacyCaseRedirect";
 import NotFound from "@/pages/not-found";
 
 function PrivateRoute({ component: Component, ...rest }: any) {
@@ -68,9 +68,12 @@ function Router() {
       <Route path="/facilities" component={() => <PrivateRoute component={Facilities} />} />
       <Route path="/facilities/:id" component={() => <PrivateRoute component={FacilityProfile} />} />
       <Route path="/patients" component={() => <PrivateRoute component={Patients} />} />
+      <Route
+        path="/patients/:patientId/treatments/:treatmentId"
+        component={() => <PrivateRoute component={TreatmentProfile} />}
+      />
       <Route path="/patients/:id" component={() => <PrivateRoute component={PatientProfile} />} />
-      <Route path="/cases" component={() => <PrivateRoute component={Cases} />} />
-      <Route path="/cases/:id" component={() => <PrivateRoute component={CaseProfile} />} />
+      <Route path="/cases/:id" component={() => <PrivateRoute component={LegacyCaseRedirect} />} />
       <Route path="/acknowledgments" component={() => <PrivateRoute component={Acknowledgments} />} />
 
       <Route component={NotFound} />

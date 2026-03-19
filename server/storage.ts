@@ -3,7 +3,7 @@ import {
   facilities, patients, ack_docs, patient_facilities, cases,
   type InsertFacility, type InsertPatient, type InsertAckDoc, type InsertPatientFacility, type InsertCase
 } from "@shared/schema";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, ne } from "drizzle-orm";
 
 export interface IStorage {
   // Facilities
@@ -32,6 +32,9 @@ export interface IStorage {
   deleteAcknowledgment(id: string, userId: string): Promise<void>;
 
   // Cases
+  getPatientTreatments(patientId: string, userId: string): Promise<any[]>;
+  getPatientTreatment(patientId: string, treatmentId: string, userId: string): Promise<any>;
+  getOpenCaseForPatient(patientId: string, userId: string, excludeCaseId?: string): Promise<typeof cases.$inferSelect | null>;
   getCases(userId: string): Promise<any[]>;
   getCase(id: string, userId: string): Promise<any>;
   createCase(data: InsertCase & { owner_user_id: string }): Promise<typeof cases.$inferSelect>;
@@ -59,7 +62,13 @@ export class DatabaseStorage implements IStorage {
     const facilityAcks = await db.select().from(ack_docs).where(and(eq(ack_docs.facility_id, id), eq(ack_docs.owner_user_id, userId)));
     const facilityCases = await db.select().from(cases).where(and(eq(cases.primary_facility_id, id), eq(cases.owner_user_id, userId)));
 
-    return { facility, patients: linkedPatients, acknowledgments: facilityAcks, cases: facilityCases };
+    return {
+      facility,
+      patients: linkedPatients,
+      acknowledgments: facilityAcks,
+      cases: facilityCases,
+      treatments: facilityCases,
+    };
   }
 
   async createFacility(facility: InsertFacility & { owner_user_id: string }) {
@@ -112,7 +121,13 @@ export class DatabaseStorage implements IStorage {
     const patientAcks = await this.getPatientAcknowledgments(id, userId);
     const patientCases = await db.select().from(cases).where(and(eq(cases.patient_id, id), eq(cases.owner_user_id, userId)));
 
-    return { patient, facilities: linkedFacilities, acknowledgments: patientAcks, cases: patientCases };
+    return {
+      patient,
+      facilities: linkedFacilities,
+      acknowledgments: patientAcks,
+      cases: patientCases,
+      treatments: patientCases,
+    };
   }
 
   async createPatient(patient: InsertPatient & { owner_user_id: string }) {
@@ -281,6 +296,22 @@ export class DatabaseStorage implements IStorage {
     .orderBy(desc(cases.created_at));
   }
 
+  async getPatientTreatments(patientId: string, userId: string) {
+    return await db.select({
+      case: cases,
+      patient_name: patients.name_or_code,
+      facility_name: facilities.facility_name,
+    })
+    .from(cases)
+    .innerJoin(patients, eq(cases.patient_id, patients.id))
+    .leftJoin(facilities, eq(cases.primary_facility_id, facilities.id))
+    .where(and(
+      eq(cases.patient_id, patientId),
+      eq(cases.owner_user_id, userId),
+    ))
+    .orderBy(desc(cases.created_at));
+  }
+
   async getCase(id: string, userId: string) {
     const [c] = await db.select({
       case: cases,
@@ -292,6 +323,39 @@ export class DatabaseStorage implements IStorage {
     .leftJoin(facilities, eq(cases.primary_facility_id, facilities.id))
     .where(and(eq(cases.id, id), eq(cases.owner_user_id, userId)));
     return c;
+  }
+
+  async getPatientTreatment(patientId: string, treatmentId: string, userId: string) {
+    const [item] = await db.select({
+      case: cases,
+      patient_name: patients.name_or_code,
+      facility_name: facilities.facility_name,
+    })
+    .from(cases)
+    .innerJoin(patients, eq(cases.patient_id, patients.id))
+    .leftJoin(facilities, eq(cases.primary_facility_id, facilities.id))
+    .where(and(
+      eq(cases.id, treatmentId),
+      eq(cases.patient_id, patientId),
+      eq(cases.owner_user_id, userId),
+    ));
+    return item;
+  }
+
+  async getOpenCaseForPatient(patientId: string, userId: string, excludeCaseId?: string) {
+    const baseConditions = [
+      eq(cases.patient_id, patientId),
+      eq(cases.owner_user_id, userId),
+      sql`upper(${cases.status}) = 'OPEN'`,
+    ];
+    if (excludeCaseId) {
+      baseConditions.push(ne(cases.id, excludeCaseId));
+    }
+    const [item] = await db.select()
+      .from(cases)
+      .where(and(...baseConditions))
+      .limit(1);
+    return item ?? null;
   }
 
   async createCase(data: InsertCase & { owner_user_id: string }) {

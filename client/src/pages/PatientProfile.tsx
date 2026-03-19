@@ -2,9 +2,10 @@ import { useRoute } from "wouter";
 import { Layout } from "@/components/ui/Layout";
 import { usePatient, useLinkFacility, useUpdatePatient } from "@/hooks/use-patients";
 import { useFacilities } from "@/hooks/use-facilities";
+import { useCreatePatientTreatment, usePatientTreatments } from "@/hooks/use-treatments";
 import {
   getAckPdfViewUrl,
-  useGenerateAckPdf,
+  useGeneratePatientHistoryPdf,
 } from "@/hooks/use-acknowledgments";
 import {
   User, Phone, Building2, Plus, History, BriefcaseMedical,
@@ -22,6 +23,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { getTreatmentSubTypes, TREATMENT_TYPE_SUBTYPE_MAP } from "@shared/treatments";
 
 export default function PatientProfile() {
   const [, params] = useRoute("/patients/:id");
@@ -29,8 +39,12 @@ export default function PatientProfile() {
   const { data: rawData, isLoading } = usePatient(id);
   const data = (rawData as any) ?? null;
   const { data: allFacilities } = useFacilities();
+  const { data: treatmentRowsRaw } = usePatientTreatments(id);
   const allFacilitiesList = (allFacilities as any[] | undefined) ?? [];
+  const treatmentRows = (treatmentRowsRaw as any[] | undefined) ?? [];
   const linkMutation = useLinkFacility();
+  const createTreatmentMutation = useCreatePatientTreatment();
+  const { mutate: generateHistoryPdf, isPending: isGeneratingHistoryPdf } = useGeneratePatientHistoryPdf();
   const updatePatientMutation = useUpdatePatient();
   const { toast } = useToast();
 
@@ -38,10 +52,17 @@ export default function PatientProfile() {
   const [isPrimary, setIsPrimary] = useState(false);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState("");
+  const [isTreatmentDialogOpen, setIsTreatmentDialogOpen] = useState(false);
+  const [treatmentTitle, setTreatmentTitle] = useState("");
+  const [treatmentType, setTreatmentType] = useState("");
+  const [treatmentSubType, setTreatmentSubType] = useState("");
+  const [treatmentFacilityId, setTreatmentFacilityId] = useState("none");
+  const [treatmentStartDate, setTreatmentStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [treatmentNotes, setTreatmentNotes] = useState("");
+  const treatmentSubTypeOptions = useMemo(() => getTreatmentSubTypes(treatmentType), [treatmentType]);
   const patient = data?.patient;
   const linkedFacilitiesList = (data?.facilities as any[] | undefined) ?? [];
   const acknowledgments = data?.acknowledgments ?? [];
-  const cases = data?.cases ?? [];
   const uniqueLinkedFacilities = useMemo(() => {
     const byId = new Map<string, any>();
     for (const row of linkedFacilitiesList) {
@@ -113,6 +134,20 @@ export default function PatientProfile() {
     });
   };
 
+  const handleSetPrimaryFacility = (facilityId: string) => {
+    linkMutation.mutate({
+      patientId: id,
+      data: { facility_id: facilityId, is_primary: true },
+    }, {
+      onSuccess: () => {
+        toast({ title: "Success", description: "Primary facility updated." });
+      },
+      onError: (e) => {
+        toast({ title: "Error", description: e.message, variant: "destructive" });
+      },
+    });
+  };
+
   const handleCancelNotes = () => {
     setNotesDraft(String(patient?.notes || ""));
     setIsEditingNotes(false);
@@ -133,6 +168,73 @@ export default function PatientProfile() {
     );
   };
 
+  const resetTreatmentForm = () => {
+    setTreatmentTitle("");
+    setTreatmentType("");
+    setTreatmentSubType("");
+    setTreatmentFacilityId("none");
+    setTreatmentStartDate(new Date().toISOString().split("T")[0]);
+    setTreatmentNotes("");
+  };
+
+  const handleCreateTreatment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!treatmentTitle.trim()) {
+      toast({ title: "Validation error", description: "Treatment title is required.", variant: "destructive" });
+      return;
+    }
+    if (!treatmentStartDate) {
+      toast({ title: "Validation error", description: "Start date is required.", variant: "destructive" });
+      return;
+    }
+    if (treatmentSubType && !treatmentType) {
+      toast({ title: "Validation error", description: "Select treatment type first.", variant: "destructive" });
+      return;
+    }
+
+    createTreatmentMutation.mutate(
+      {
+        patientId: id,
+        data: {
+          treatment_title: treatmentTitle.trim(),
+          treatment_type: treatmentType || null,
+          treatment_sub_type: treatmentSubType || null,
+          treatment_start_date: treatmentStartDate,
+          treatment_notes: treatmentNotes.trim() || null,
+          primary_facility_id: treatmentFacilityId === "none" ? null : treatmentFacilityId,
+        },
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Success", description: "Treatment created." });
+          setIsTreatmentDialogOpen(false);
+          resetTreatmentForm();
+        },
+        onError: (e) => {
+          toast({ title: "Error", description: e.message, variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const openBlobInNewTab = (blob: Blob) => {
+    const blobUrl = URL.createObjectURL(blob);
+    window.open(blobUrl, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  };
+
+  const handleGenerateHistoryPdf = () => {
+    generateHistoryPdf(id, {
+      onSuccess: (blob) => {
+        toast({ title: "PDF ready", description: "Full payment history PDF generated." });
+        openBlobInNewTab(blob);
+      },
+      onError: (e) => {
+        toast({ title: "Error", description: e.message, variant: "destructive" });
+      },
+    });
+  };
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -151,10 +253,18 @@ export default function PatientProfile() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
             <Card className="rounded-2xl border-slate-200">
-              <CardHeader className="border-b border-slate-100">
+              <CardHeader className="border-b border-slate-100 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <History className="h-5 w-5 text-blue-600" /> Acknowledgment History
                 </CardTitle>
+                <Button
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  disabled={isGeneratingHistoryPdf || ackRows.length === 0}
+                  onClick={handleGenerateHistoryPdf}
+                >
+                  {isGeneratingHistoryPdf ? "Generating..." : "Generate PDF"}
+                </Button>
               </CardHeader>
               <CardContent className="p-0 overflow-x-auto">
                 <table className="w-full text-sm">
@@ -204,33 +314,50 @@ export default function PatientProfile() {
             </Card>
 
             <Card className="rounded-2xl border-slate-200">
-              <CardHeader className="border-b border-slate-100">
+              <CardHeader className="border-b border-slate-100 flex flex-row items-center justify-between">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <BriefcaseMedical className="h-5 w-5 text-blue-600" /> Medical Cases
+                  <BriefcaseMedical className="h-5 w-5 text-blue-600" /> Treatments
                 </CardTitle>
+                <Button
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={() => setIsTreatmentDialogOpen(true)}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Treatment
+                </Button>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="divide-y divide-slate-100">
-                  {cases.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400">No cases recorded</div>
+                  {treatmentRows.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400">No treatments recorded</div>
                   ) : (
-                    cases.map((c: any) => (
-                      <Link key={c.id} href={`/cases/${c.id}`}>
+                    treatmentRows.map((row: any) => (
+                      <Link key={row.treatment.id} href={`/patients/${id}/treatments/${row.treatment.id}`}>
                         <div className="p-4 hover:bg-slate-50 cursor-pointer flex items-center justify-between">
                           <div>
-                            <div className="font-medium text-slate-900">{c.case_title}</div>
-                            <div className="text-xs text-slate-500">Started: {format(new Date(c.start_date), "MMM d, yyyy")}</div>
+                            <div className="font-medium text-slate-900">{row.treatment.treatment_title}</div>
+                            <div className="text-xs text-slate-500">
+                              Started: {format(new Date(row.treatment.treatment_start_date), "MMM d, yyyy")}
+                            </div>
+                            {(row.treatment.treatment_type || row.treatment.treatment_sub_type) && (
+                              <div className="text-xs text-slate-500 mt-0.5">
+                                {[row.treatment.treatment_type, row.treatment.treatment_sub_type]
+                                  .filter(Boolean)
+                                  .join(" / ")}
+                              </div>
+                            )}
                           </div>
                           <Badge
                             className={
-                              c.status === "OPEN"
+                              row.treatment.treatment_status === "OPEN"
                                 ? "bg-blue-600 text-white"
-                                : c.status === "HOLD"
+                                : row.treatment.treatment_status === "HOLD"
                                   ? "bg-amber-500 text-white"
                                   : "bg-emerald-600 text-white"
                             }
                           >
-                            {c.status}
+                            {row.treatment.treatment_status}
                           </Badge>
                         </div>
                       </Link>
@@ -255,7 +382,20 @@ export default function PatientProfile() {
                       <Link href={`/facilities/${f.id}`} className="font-medium text-blue-600 hover:underline">
                         {f.facility_name}
                       </Link>
-                      {f.is_primary && <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Primary</Badge>}
+                      {f.is_primary ? (
+                        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Primary</Badge>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8"
+                          disabled={linkMutation.isPending}
+                          onClick={() => handleSetPrimaryFacility(String(f.id))}
+                        >
+                          Set Primary
+                        </Button>
+                      )}
                     </div>
                   ))}
 
@@ -341,15 +481,132 @@ export default function PatientProfile() {
           </div>
         </div>
       </div>
+
+      <Dialog open={isTreatmentDialogOpen} onOpenChange={setIsTreatmentDialogOpen}>
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Add Treatment</DialogTitle>
+            <DialogDescription>Create a treatment record for this patient.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateTreatment} className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="treatment-title">Treatment Title *</Label>
+              <Input
+                id="treatment-title"
+                value={treatmentTitle}
+                onChange={(e) => setTreatmentTitle(e.target.value)}
+                placeholder="e.g. Knee pain follow-up"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Treatment Type</Label>
+                <Select
+                  value={treatmentType || "none"}
+                  onValueChange={(value) => {
+                    const nextType = value === "none" ? "" : value;
+                    setTreatmentType(nextType);
+                    if (nextType) {
+                      const options = getTreatmentSubTypes(nextType);
+                      if (!options.includes(treatmentSubType)) setTreatmentSubType("");
+                    } else {
+                      setTreatmentSubType("");
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {Object.keys(TREATMENT_TYPE_SUBTYPE_MAP).map((type) => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Treatment Sub Type</Label>
+                <Select
+                  value={treatmentSubType || "none"}
+                  onValueChange={(value) => setTreatmentSubType(value === "none" ? "" : value)}
+                  disabled={!treatmentType}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={treatmentType ? "Select sub type" : "Select type first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {treatmentSubTypeOptions.map((subType) => (
+                      <SelectItem key={subType} value={subType}>{subType}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="treatment-facility">Facility</Label>
+                <Select value={treatmentFacilityId} onValueChange={setTreatmentFacilityId}>
+                  <SelectTrigger id="treatment-facility">
+                    <SelectValue placeholder="Select facility" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {uniqueLinkedFacilities.map((facility: any) => (
+                      <SelectItem key={facility.id} value={String(facility.id)}>
+                        {facility.facility_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="treatment-start-date">Start Date *</Label>
+                <Input
+                  id="treatment-start-date"
+                  type="date"
+                  value={treatmentStartDate}
+                  onChange={(e) => setTreatmentStartDate(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="treatment-notes">Treatment Notes</Label>
+              <Textarea
+                id="treatment-notes"
+                value={treatmentNotes}
+                onChange={(e) => setTreatmentNotes(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsTreatmentDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white" disabled={createTreatmentMutation.isPending}>
+                {createTreatmentMutation.isPending ? "Creating..." : "Create Treatment"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
 
 function AckPdfActions({ ack }: { ack: any }) {
-  const { mutate: generatePdf, isPending } = useGenerateAckPdf();
   const { toast } = useToast();
   const viewUrl = getAckPdfViewUrl(ack.id);
-  const hasPdf = !!ack.pdf_path;
 
   const openPdf = async () => {
     const popup = window.open("", "_blank", "noopener,noreferrer");
@@ -373,27 +630,10 @@ function AckPdfActions({ ack }: { ack: any }) {
     }
   };
 
-  const handleGenerate = () => {
-    generatePdf(ack.id, {
-      onSuccess: () => {
-        toast({ title: "PDF ready", description: "Acknowledgment PDF generated." });
-        void openPdf();
-      },
-      onError: (e) => {
-        toast({ title: "Error", description: e.message, variant: "destructive" });
-      },
-    });
-  };
-
   return (
-    <div className="flex items-center justify-end gap-2">
-      {hasPdf && (
-        <Button size="sm" variant="outline" onClick={() => void openPdf()}>
-          View PDF
-        </Button>
-      )}
-      <Button size="sm" onClick={handleGenerate} disabled={isPending}>
-        {isPending ? "Generating..." : hasPdf ? "Regenerate" : "Generate PDF"}
+    <div className="flex items-center justify-end">
+      <Button size="sm" variant="outline" onClick={() => void openPdf()}>
+        View PDF
       </Button>
     </div>
   );

@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Layout } from "@/components/ui/Layout";
-import { useCase, useCreateCase, useCases } from "@/hooks/use-cases";
+import { useCreateCase, useCases } from "@/hooks/use-cases";
 import { usePatients } from "@/hooks/use-patients";
 import { useFacilities } from "@/hooks/use-facilities";
 import { Plus, Search, BriefcaseMedical, Calendar, User, Building2, ExternalLink } from "lucide-react";
@@ -31,8 +31,9 @@ export default function Cases() {
   const { data: cases, isLoading } = useCases();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const caseList = (cases as any[] | undefined) ?? [];
 
-  const filteredCases = cases?.filter((c: any) => 
+  const filteredCases = caseList.filter((c: any) => 
     c.case.case_title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.patient_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -156,6 +157,8 @@ function CreateCaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const { toast } = useToast();
   const { data: patients } = usePatients();
   const { data: facilities } = useFacilities();
+  const patientsList = (patients as any[] | undefined) ?? [];
+  const facilitiesList = (facilities as any[] | undefined) ?? [];
   const createMutation = useCreateCase();
   const [patientId, setPatientId] = useState<string | undefined>(undefined);
   const [facilityId, setFacilityId] = useState("none");
@@ -214,7 +217,7 @@ function CreateCaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
                 <SelectValue placeholder="Select patient" />
               </SelectTrigger>
               <SelectContent>
-                {patients?.map((p: any) => (
+                {patientsList.map((p: any) => (
                   <SelectItem key={p.id} value={String(p.id)}>{p.name_or_code}</SelectItem>
                 ))}
               </SelectContent>
@@ -229,7 +232,7 @@ function CreateCaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">None</SelectItem>
-                {facilities?.map((f: any) => (
+                {facilitiesList.map((f: any) => (
                   <SelectItem key={f.id} value={String(f.id)}>{f.facility_name}</SelectItem>
                 ))}
               </SelectContent>

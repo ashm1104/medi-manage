@@ -41,6 +41,8 @@ export const cases = pgTable("cases", {
   patient_id: uuid("patient_id").references(() => patients.id).notNull(),
   primary_facility_id: uuid("primary_facility_id").references(() => facilities.id),
   case_title: text("case_title").notNull(),
+  treatment_type: text("treatment_type"),
+  treatment_sub_type: text("treatment_sub_type"),
   status: text("status").default("OPEN").notNull(),
   start_date: date("start_date").notNull(),
   notes: text("notes"),

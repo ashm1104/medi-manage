@@ -5,6 +5,20 @@ import {
   facilities, patients, ack_docs, patient_facilities, cases 
 } from './schema';
 
+const treatmentCreateSchema = z.object({
+  treatment_title: z.string().min(1),
+  treatment_start_date: z.string().min(1),
+  treatment_status: z.string().optional(),
+  treatment_notes: z.string().nullable().optional(),
+  treatment_closure_date: z.string().nullable().optional(),
+  treatment_closure_notes: z.string().nullable().optional(),
+  treatment_type: z.string().nullable().optional(),
+  treatment_sub_type: z.string().nullable().optional(),
+  primary_facility_id: z.string().uuid().nullable().optional(),
+});
+
+const treatmentUpdateSchema = treatmentCreateSchema.partial();
+
 export const errorSchemas = {
   validation: z.object({
     message: z.string(),
@@ -40,6 +54,7 @@ export const api = {
           patients: z.array(z.any()),
           acknowledgments: z.array(z.custom<typeof ack_docs.$inferSelect>()),
           cases: z.array(z.custom<typeof cases.$inferSelect>()),
+          treatments: z.array(z.custom<typeof cases.$inferSelect>()).optional(),
         }),
         404: errorSchemas.notFound,
         401: errorSchemas.unauthorized,
@@ -94,6 +109,7 @@ export const api = {
           facilities: z.array(z.any()),
           acknowledgments: z.array(z.any()),
           cases: z.array(z.custom<typeof cases.$inferSelect>()),
+          treatments: z.array(z.custom<typeof cases.$inferSelect>()).optional(),
         }),
         404: errorSchemas.notFound,
         401: errorSchemas.unauthorized,
@@ -147,7 +163,59 @@ export const api = {
         401: errorSchemas.unauthorized,
       },
     },
+    acknowledgmentHistoryPdf: {
+      method: 'GET' as const,
+      path: '/api/patients/:patientId/acknowledgments/history_pdf' as const,
+      responses: {
+        200: z.any(), // PDF stream
+        404: errorSchemas.notFound,
+        401: errorSchemas.unauthorized,
+      },
+    },
+    treatments: {
+      list: {
+        method: 'GET' as const,
+        path: '/api/patients/:patientId/treatments' as const,
+        responses: {
+          200: z.array(z.any()),
+          404: errorSchemas.notFound,
+          401: errorSchemas.unauthorized,
+        },
+      },
+      get: {
+        method: 'GET' as const,
+        path: '/api/patients/:patientId/treatments/:treatmentId' as const,
+        responses: {
+          200: z.any(),
+          404: errorSchemas.notFound,
+          401: errorSchemas.unauthorized,
+        },
+      },
+      create: {
+        method: 'POST' as const,
+        path: '/api/patients/:patientId/treatments' as const,
+        input: treatmentCreateSchema,
+        responses: {
+          201: z.any(),
+          400: errorSchemas.validation,
+          404: errorSchemas.notFound,
+          401: errorSchemas.unauthorized,
+        },
+      },
+      update: {
+        method: 'PUT' as const,
+        path: '/api/patients/:patientId/treatments/:treatmentId' as const,
+        input: treatmentUpdateSchema,
+        responses: {
+          200: z.any(),
+          400: errorSchemas.validation,
+          404: errorSchemas.notFound,
+          401: errorSchemas.unauthorized,
+        },
+      },
+    },
   },
+  // Deprecated - kept for backward compatibility while clients migrate to patient-scoped treatments.
   cases: {
     list: {
       method: 'GET' as const,
@@ -228,7 +296,7 @@ export const api = {
       method: 'POST' as const,
       path: '/api/ack_docs/:id/generate_pdf' as const,
       responses: {
-        200: z.object({ pdf_path: z.string() }),
+        200: z.any(), // PDF stream (history report)
         404: errorSchemas.notFound,
         401: errorSchemas.unauthorized,
       },

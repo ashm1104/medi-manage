@@ -23,8 +23,9 @@ export default function Patients() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
+  const patientList = (patients as any[] | undefined) ?? [];
 
-  const filteredPatients = patients?.filter(p => 
+  const filteredPatients = patientList.filter((p: any) => 
     p.name_or_code.toLowerCase().includes(searchTerm.toLowerCase())
   );
 

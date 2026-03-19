@@ -27,11 +27,14 @@ export default function Dashboard() {
   const { data: acks, isLoading: loadingAcks } = useQuery({
     queryKey: [api.acknowledgments.list.path],
   });
+  const facilityList = (facilities as any[] | undefined) ?? [];
+  const patientList = (patients as any[] | undefined) ?? [];
+  const ackList = (acks as any[] | undefined) ?? [];
 
   const stats = [
     {
       label: "Total Facilities",
-      value: facilities?.length || 0,
+      value: facilityList.length,
       icon: Building2,
       color: "text-blue-600",
       bgColor: "bg-blue-50",
@@ -39,7 +42,7 @@ export default function Dashboard() {
     },
     {
       label: "Active Patients",
-      value: patients?.length || 0,
+      value: patientList.length,
       icon: Users,
       color: "text-emerald-600",
       bgColor: "bg-emerald-50",
@@ -47,7 +50,7 @@ export default function Dashboard() {
     },
     {
       label: "Acknowledgments",
-      value: acks?.length || 0,
+      value: ackList.length,
       icon: FileCheck,
       color: "text-purple-600",
       bgColor: "bg-purple-50",
@@ -113,12 +116,12 @@ export default function Dashboard() {
                       </div>
                     </div>
                   ))
-                ) : acks?.length === 0 ? (
+                ) : ackList.length === 0 ? (
                   <div className="p-12 text-center text-slate-400">
                     No recent activity
                   </div>
                 ) : (
-                  acks?.slice(0, 5).map((ack: any) => (
+                  ackList.slice(0, 5).map((ack: any) => (
                     <div key={ack.ack.id} className="p-4 hover:bg-slate-50 transition-colors flex items-center justify-between group">
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs">

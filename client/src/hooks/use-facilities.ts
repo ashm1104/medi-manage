@@ -8,6 +8,7 @@ type FacilityDetails = {
   patients: Array<any>;
   acknowledgments: AckDoc[];
   cases: Case[];
+  treatments?: Case[];
 };
 
 export function useFacilities() {

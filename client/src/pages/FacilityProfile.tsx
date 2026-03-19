@@ -35,7 +35,8 @@ export default function FacilityProfile() {
   if (isLoading) return <Layout><Skeleton className="h-full w-full" /></Layout>;
   if (!data) return <Layout>Facility not found</Layout>;
 
-  const { facility, patients: linkedPatients, acknowledgments, cases } = data;
+  const { facility, patients: linkedPatients, acknowledgments } = data;
+  const treatments = (data.treatments ?? data.cases ?? []) as any[];
 
   const handleStartEditingLocationContact = () => {
     setAddressInput(facility.address || "");
@@ -221,21 +222,19 @@ export default function FacilityProfile() {
             <Card className="rounded-2xl border-slate-200">
               <CardHeader className="border-b border-slate-100">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <BriefcaseMedical className="h-5 w-5 text-emerald-600" /> Active Cases
+                  <BriefcaseMedical className="h-5 w-5 text-emerald-600" /> Active Treatments
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="divide-y divide-slate-100">
-                  {cases.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400">No active cases</div>
+                  {treatments.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400">No active treatments</div>
                   ) : (
-                    cases.map((c: any) => (
-                      <Link key={c.id} href={`/cases/${c.id}`}>
-                        <div className="p-4 hover:bg-slate-50 cursor-pointer">
-                          <div className="font-medium text-slate-900 text-sm">{c.case_title}</div>
-                          <div className="text-xs text-slate-500 mt-1">{format(new Date(c.start_date), "MMM d, yyyy")}</div>
-                        </div>
-                      </Link>
+                    treatments.map((c: any) => (
+                      <div key={c.id} className="p-4 bg-white">
+                        <div className="font-medium text-slate-900 text-sm">{c.case_title}</div>
+                        <div className="text-xs text-slate-500 mt-1">{format(new Date(c.start_date), "MMM d, yyyy")}</div>
+                      </div>
                     ))
                   )}
                 </div>

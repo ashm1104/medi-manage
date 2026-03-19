@@ -118,21 +118,37 @@ export function useLatestAcknowledgment(patientId: string, facilityId: string) {
 export function useGenerateAckPdf() {
   return useMutation({
     mutationFn: async (id: string) => {
+      const generateUrl = buildUrl(api.acknowledgments.generatePdf.path, { id });
       const res = await apiRequest(
         api.acknowledgments.generatePdf.method,
-        buildUrl(api.acknowledgments.generatePdf.path, { id }),
+        generateUrl,
       );
-      return res.json() as Promise<{ pdf_path: string }>;
+      const contentType = (res.headers.get("content-type") || "").toLowerCase();
+      if (contentType.includes("application/json")) {
+        // Compatibility fallback for older backend behavior that returns { pdf_path }.
+        const payload = await res.json().catch(() => null) as { pdf_path?: string; message?: string } | null;
+        if (!payload?.pdf_path) {
+          throw new Error(payload?.message || "Unexpected response while generating PDF");
+        }
+        const viewRes = await apiRequest(
+          api.acknowledgments.viewPdf.method,
+          buildUrl(api.acknowledgments.viewPdf.path, { id }),
+        );
+        return viewRes.blob();
+      }
+      return res.blob();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [api.acknowledgments.list.path] });
-      queryClient.invalidateQueries({ queryKey: [api.patients.list.path] });
-      queryClient.invalidateQueries({
-        predicate: (query) => {
-          const first = query.queryKey[0];
-          return typeof first === "string" && first.startsWith("/api/patients/");
-        },
-      });
+  });
+}
+
+export function useGeneratePatientHistoryPdf() {
+  return useMutation({
+    mutationFn: async (patientId: string) => {
+      const res = await apiRequest(
+        api.patients.acknowledgmentHistoryPdf.method,
+        buildUrl(api.patients.acknowledgmentHistoryPdf.path, { patientId }),
+      );
+      return res.blob();
     },
   });
 }

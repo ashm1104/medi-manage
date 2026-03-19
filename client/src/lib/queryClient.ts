@@ -16,11 +16,19 @@ export class ApiError extends Error {
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
-  const userId = data.session?.user?.id;
+  const user = data.session?.user;
+  const userId = user?.id;
   const accessToken = data.session?.access_token;
+  const metadata = user?.user_metadata as Record<string, unknown> | undefined;
+  const userName =
+    (typeof metadata?.full_name === "string" && metadata.full_name.trim())
+    || (typeof metadata?.name === "string" && metadata.name.trim())
+    || (typeof user?.email === "string" && user.email.trim())
+    || "";
 
   return {
     ...(userId ? { "x-user-id": userId } : {}),
+    ...(userName ? { "x-user-name": userName } : {}),
     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
   };
 }

@@ -6,10 +6,8 @@ import {
   useAcknowledgments,
   useCreateAcknowledgment,
   useDeleteAcknowledgment,
-  useGenerateAckPdf,
   useLatestAcknowledgment,
 } from "@/hooks/use-acknowledgments";
-import { useCases } from "@/hooks/use-cases";
 import { useFacilities } from "@/hooks/use-facilities";
 import { usePatientFacilities, usePatients } from "@/hooks/use-patients";
 import { Plus, Search, Trash2, FileCheck, DollarSign, Calculator } from "lucide-react";
@@ -80,7 +78,7 @@ export default function Acknowledgments() {
             <Search className="w-5 h-5 text-slate-400" />
             <input
               type="text"
-              placeholder="Search by ACK No or Case Ref..."
+              placeholder="Search by ACK No or Treatment Ref..."
               className="bg-transparent border-none outline-none text-sm w-full placeholder:text-slate-400"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -173,10 +171,8 @@ export default function Acknowledgments() {
 }
 
 function PdfActions({ ack }: { ack: any }) {
-  const { mutate: generatePdf, isPending } = useGenerateAckPdf();
   const { toast } = useToast();
   const viewUrl = getAckPdfViewUrl(ack.id);
-  const hasPdf = !!ack.pdf_path;
 
   const openPdf = async () => {
     const popup = window.open("", "_blank", "noopener,noreferrer");
@@ -200,40 +196,15 @@ function PdfActions({ ack }: { ack: any }) {
     }
   };
 
-  const handleGenerate = () => {
-    generatePdf(ack.id, {
-      onSuccess: () => {
-        toast({ title: "PDF ready", description: "Acknowledgment PDF generated." });
-        void openPdf();
-      },
-      onError: (e) => {
-        toast({ title: "Error", description: e.message, variant: "destructive" });
-      },
-    });
-  };
-
   return (
-    <>
-      {hasPdf && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200"
-          onClick={openPdf}
-        >
-          View PDF
-        </Button>
-      )}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-8 text-xs bg-primary/5 hover:bg-primary/10 text-primary border border-primary/20"
-        disabled={isPending}
-        onClick={handleGenerate}
-      >
-        {isPending ? "Generating..." : hasPdf ? "Regenerate" : "Generate PDF"}
-      </Button>
-    </>
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-8 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200"
+      onClick={openPdf}
+    >
+      View PDF
+    </Button>
   );
 }
 
@@ -272,22 +243,15 @@ function CreateAckDialog({
 }) {
   const { toast } = useToast();
   const { mutate, isPending } = useCreateAcknowledgment();
-  const { data: casesData } = useCases();
 
   const [selectedPatientId, setSelectedPatientId] = useState("");
   const [selectedFacilityId, setSelectedFacilityId] = useState("");
   const [ackType, setAckType] = useState("VISIT");
   const [ackDate, setAckDate] = useState(new Date().toISOString().split("T")[0]);
-  const [caseRef, setCaseRef] = useState("");
   const [splitAgreed, setSplitAgreed] = useState("");
   const [notes, setNotes] = useState("");
   const [amountFinal, setAmountFinal] = useState("");
   const [amountPaid, setAmountPaid] = useState("");
-  const allCases = (casesData as any[] | undefined) ?? [];
-  const patientCases = useMemo(() => {
-    if (!selectedPatientId) return [];
-    return allCases.filter((row: any) => String(row?.case?.patient_id) === String(selectedPatientId));
-  }, [allCases, selectedPatientId]);
 
   const { data: mappedFacilities = [] } = usePatientFacilities(selectedPatientId);
   const { data: latestAckRaw } = useLatestAcknowledgment(selectedPatientId, selectedFacilityId);
@@ -312,22 +276,6 @@ function CreateAckDialog({
   }, [selectedPatientId, sortedFacilities]);
 
   useEffect(() => {
-    if (!caseRef) return;
-    const existsInPatientCases = patientCases.some((row: any) => String(row?.case?.id) === String(caseRef));
-    if (!existsInPatientCases) {
-      setCaseRef("");
-    }
-  }, [patientCases, caseRef]);
-
-  useEffect(() => {
-    if (!selectedPatientId || caseRef || patientCases.length === 0) return;
-    const latestPatientCaseId = patientCases[0]?.case?.id;
-    if (latestPatientCaseId) {
-      setCaseRef(String(latestPatientCaseId));
-    }
-  }, [selectedPatientId, patientCases, caseRef]);
-
-  useEffect(() => {
     if (!selectedFacilityId) {
       setAmountFinal("");
       setAmountPaid("");
@@ -345,14 +293,7 @@ function CreateAckDialog({
     setAmountFinal(latestAck.amount_final != null ? String(latestAck.amount_final) : "");
     setAmountPaid("");
     setSplitAgreed(latestAck.split_agreed != null ? String(latestAck.split_agreed) : "");
-    if (!caseRef && latestAck.case_ref != null) {
-      const latestCaseRef = String(latestAck.case_ref);
-      const existsInPatientCases = patientCases.some((row: any) => String(row?.case?.id) === latestCaseRef);
-      if (existsInPatientCases) {
-        setCaseRef(latestCaseRef);
-      }
-    }
-  }, [selectedFacilityId, latestAck, caseRef, patientCases]);
+  }, [selectedFacilityId, latestAck]);
 
   const latestAckBalance = latestAck && Number.isFinite(Number(latestAck.balance))
     ? Number(latestAck.balance)
@@ -370,7 +311,6 @@ function CreateAckDialog({
     setSelectedFacilityId("");
     setAckType("VISIT");
     setAckDate(new Date().toISOString().split("T")[0]);
-    setCaseRef("");
     setSplitAgreed("");
     setNotes("");
     setAmountFinal("");
@@ -414,7 +354,7 @@ function CreateAckDialog({
       ack_type: ackType,
       facility_id: selectedFacilityId,
       patient_id: selectedPatientId,
-      case_ref: caseRef || null,
+      case_ref: null,
       split_agreed: splitAgreed || null,
       ack_date: ackDate,
       amount_final: String(final),
@@ -451,7 +391,6 @@ function CreateAckDialog({
               <Select value={selectedPatientId} onValueChange={(value) => {
                 setSelectedPatientId(value);
                 setSelectedFacilityId("");
-                setCaseRef("");
                 setAmountFinal("");
                 setAmountPaid("");
                 setSplitAgreed("");
@@ -501,39 +440,9 @@ function CreateAckDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="case_ref">Case Reference</Label>
-              <Select
-                value={caseRef || "none"}
-                onValueChange={(value) => setCaseRef(value === "none" ? "" : value)}
-                disabled={!selectedPatientId || patientCases.length === 0}
-              >
-                <SelectTrigger id="case_ref">
-                  <SelectValue
-                    placeholder={
-                      !selectedPatientId
-                        ? "Select patient first"
-                        : patientCases.length === 0
-                          ? "No cases for this patient"
-                          : "Select case"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {patientCases.map((row: any) => (
-                    <SelectItem key={String(row.case.id)} value={String(row.case.id)}>
-                      {row.case.case_title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="split_agreed">Split Agreed</Label>
-              <Input id="split_agreed" placeholder="e.g. 60/40" value={splitAgreed} onChange={(e) => setSplitAgreed(e.target.value)} />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="split_agreed">Split Agreed</Label>
+            <Input id="split_agreed" placeholder="e.g. 60/40" value={splitAgreed} onChange={(e) => setSplitAgreed(e.target.value)} />
           </div>
 
           <div className="space-y-2">
